@@ -52,7 +52,7 @@
 ## About The Project
 
 LLM Consensus System (LCS) is a service that computes a single consensus response from multiple LLM outputs. Clients send a consensus request to a REST/JSON API.
-The API validates input and forwards it to the consensus core, which triggers LLM adapters to produce candidate responses, computes consensus and scoring, emits metrics (and optional logs), and returns the final response.
+The API validates input and forwards it to the consensus core, which triggers LLM adapters to produce candidate responses, computes consensus and scoring, emits metrics, logs runs (optional in MVP, required in V1+), and returns the final response.
 The architecture emphasizes scalability, modularity, and fault tolerance through a consensus engine, API gateway, state management, and monitoring/logging components, with Rust used for orchestration and security-sensitive logic and Python used for LLM execution.
 
 [![Product Name Screen Shot][product-screenshot]](https://example.com)
@@ -92,6 +92,8 @@ You can find all the documentation you may need in ``docs/``
 | Security | `docs/security/` | Security goals, policies, and controls. |
 | Testing | `docs/testing/` | Test strategy, plans, and reports. |
 | Tooling | `docs/tooling/` | Toolchain, CI, and documentation rules. |
+| Rust Modules | `rust/docs/` | Rust module boundaries and conventions. |
+| Python Modules | `python/docs/` | Python module boundaries and conventions. |
 
 ### Prerequisites
 
@@ -176,7 +178,7 @@ Project Link: [https://github.com/remiboivin021/llm-consensus-system](https://gi
 [issues-shield]: https://img.shields.io/github/issues/remiboivin021/llm-consensus-system.svg?style=for-the-badge
 [issues-url]: https://github.com/remiboivin021/llm-consensus-system/issues
 [license-shield]: https://img.shields.io/github/license/remiboivin021/llm-consensus-system.svg?style=for-the-badge
-[license-url]: https://github.com/remiboivin021/llm-consensus-system/blob/master/LICENSE
+[license-url]: https://github.com/remiboivin021/llm-consensus-system/blob/main/LICENSE
 
 [product-screenshot]: images/screenshot.png
 <!-- TODO: Rewrite this to use the rights shields icons. Just facts. You'll be rewarded if you don't assume things -->

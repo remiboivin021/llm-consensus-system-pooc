@@ -16,5 +16,6 @@
 
 - HTTP adapter for API
 - Python adapter for LLM execution
+- FFI adapter for LLM execution (future)
 - SQLite adapter for run logging
 - Long-term storage adapter for V2

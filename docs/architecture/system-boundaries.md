@@ -16,5 +16,5 @@
 ## External Dependencies
 
 - LLM providers or runtimes
-- Optional storage for run logging
+- Storage for run logging (optional in MVP, required in V1+)
 - Monitoring backends for metrics

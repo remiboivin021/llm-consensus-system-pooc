@@ -1,38 +1,44 @@
-# Design Philosophy
+# Design
 
-The design of the LLM Consensus System emphasizes robustness, scalability, and maintainability. This section outlines the key design principles and components.
+This file captures design considerations for LCS.
+It focuses on system-level design intent and points to language-specific design artifacts.
 
-## Error Handling
-- **Purpose**: Ensures the system can gracefully handle unexpected situations.
-- **Practices**:
-  - Use centralized error logging for debugging and analysis.
-  - Implement retry mechanisms for transient failures.
-  - Provide meaningful error messages to users and developers.
+## Introduction and Goals
 
-## State Management
-- **Purpose**: Maintains consistency across distributed nodes.
-- **Practices**:
-  - Use a consensus algorithm to synchronize state changes.
-  - Store critical data in a distributed database.
-  - Implement caching to improve performance.
+The design goal is to keep LCS simple to integrate while preserving strict separation between core logic and infrastructure. Controllers, services, and
+guards are implemented per language and documented in `rust/docs/design/` and `python/docs/design/`.
 
-## Modular Design
-- **Purpose**: Facilitates scalability and ease of maintenance.
-- **Practices**:
-  - Divide the system into loosely coupled modules.
-  - Define clear interfaces for communication between modules.
-  - Use dependency injection to manage dependencies.
+## Context and Scope
 
-## Controllers, Guards, and Services
-- **Controllers**: Handle incoming requests and delegate tasks to the appropriate services.
-- **Guards**: Enforce security and access control policies.
-- **Services**: Implement the core business logic of the system.
+Design scope covers how core use cases are exposed through controllers and how
+services orchestrate consensus logic. UI, training, billing, and user management
+are out of scope for design in this repository.
 
-## Design Patterns
-- **Purpose**: Promote best practices and reusable solutions.
-- **Examples**:
-  - Singleton for managing shared resources.
-  - Factory for creating complex objects.
-  - Observer for event-driven communication.
+## Building Block View
 
-For detailed examples and explanations, refer to the subdirectories in this section.
+Design-level building blocks map to the hexagonal structure: controllers and services in the application layer, guards at system boundaries, and shared components for validation and error handling. Detailed module-level design is maintained in the language-specific design folders.
+
+## Runtime View
+
+Runtime behavior is defined by the architecture runtime view in
+`docs/architecture/index.md`. Design details for request handling are captured in the language-specific controller and service documents.
+
+## Crosscutting Concepts
+
+Error handling, validation, and state management are defined per language and documented in the language-specific design folders. Cross-system behavior should remain consistent with the architecture constraints.
+
+## Architectural Decisions
+
+Design decisions are recorded as ADRs in `docs/governance/adr/` when they affect cross-cutting behavior or long-term maintainability.
+
+## Quality Requirements
+
+Design-level quality requirements are not formalized yet and will be added when implementation begins.
+
+## Risks and Technical Debt
+
+Design risks and technical debt are not formalized yet and will be tracked as implementation progresses.
+
+## Glossary
+
+Terminology is defined in `docs/references/glossary.md`.

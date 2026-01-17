@@ -14,9 +14,11 @@ stabilizes.
 - Rust is used for orchestration and security-sensitive logic.
 - Python is used for LLM execution.
 - Clean/hexagonal architecture is enforced.
+- Requests are stateless; each call includes its own prompt and context.
 
 ## Storage
 
-- MVP and V1 use SQLite for run logging.
-- V2 uses a local NoSQL store (TBD) for long-term logging.
+- MVP uses SQLite for run logging when enabled.
+- V1 requires SQLite for run logging.
+- V2 uses a local NoSQL store (TBD) for long-term logging and system improvement.
 - Storage is optional for MVP if logging is disabled.
