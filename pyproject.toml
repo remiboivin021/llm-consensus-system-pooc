@@ -1,0 +1,55 @@
+[tool.poetry]
+name = "lcs"
+version = "0.1.0"
+description = "LLM consensus service with FastAPI, CLI, and observability stack."
+authors = ["Your Name <you@example.com>"]
+readme = "README.md"
+packages = [{ include = "sample" }]
+
+[tool.poetry.scripts]
+lcs = "sample.cli.main:app"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = "^0.115.0"
+uvicorn = { version = "^0.30.5", extras = ["standard"] }
+pydantic = "^2.9.2"
+pydantic-settings = "^2.4.0"
+httpx = "^0.27.2"
+prometheus-client = "^0.20.0"
+structlog = "^24.2.0"
+opentelemetry-api = "^1.26.0"
+opentelemetry-sdk = "^1.26.0"
+opentelemetry-exporter-otlp = "^1.26.0"
+opentelemetry-instrumentation-fastapi = "^0.47b0"
+opentelemetry-instrumentation-httpx = "^0.47b0"
+typer = "^0.12.5"
+radon = "^6.0.1"
+pycodestyle = "^2.12.1"
+pydocstyle = "^6.3.0"
+vulture = "^2.11"
+bandit = "^1.7.9"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.2"
+pytest-asyncio = "^0.24.0"
+respx = "^0.21.1"
+ruff = "^0.6.9"
+black = "^24.8.0"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.ruff]
+line-length = 100
+extend-exclude = ["docker"]
+target-version = "py311"
+
+[tool.pytest.ini_options]
+addopts = "-q"
+asyncio_mode = "auto"

@@ -1,0 +1,47 @@
+version: "3.9"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    command: uvicorn sample.api.app:app --host 0.0.0.0 --port 8000 --reload
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./:/app
+      - dev-poetry-cache:/root/.cache/pypoetry
+    environment:
+      - PYTHONPATH=/app
+    depends_on:
+      - otel-collector
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.100.0
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./docker/otel/otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    ports:
+      - "4318:4318"
+    depends_on:
+      - tempo
+      - loki
+
+  loki:
+    image: grafana/loki:2.9.4
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    ports:
+      - "3100:3100"
+
+  tempo:
+    image: grafana/tempo:2.4.1
+    command: ["-config.file=/etc/tempo/local-config.yaml"]
+    ports:
+      - "3200:3200"
+    volumes:
+      - ./docker/tempo/local-config.yaml:/etc/tempo/local-config.yaml:ro
+
+volumes:
+  dev-poetry-cache:

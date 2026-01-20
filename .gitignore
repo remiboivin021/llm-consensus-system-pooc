@@ -1,0 +1,37 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+.envrc
+.ropeproject
+
+# Poetry
+poetry.lock
+
+# VS Code and IDE
+.idea/
+.vscode/
+
+# Pytest cache
+.pytest_cache/
+
+# Coverage
+.coverage
+htmlcov/
+
+# Logs
+*.log
+
+# Docker
+*.pid
+*.tar
+*.gz
+*.zip
+
+# Env files
+.env
+.vscode/*
+site/
