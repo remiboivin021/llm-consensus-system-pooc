@@ -3,8 +3,8 @@ import json
 import pytest
 import respx
 
-from sample.providers.openrouter import call_model
-from sample.providers.transport import close_client
+from sample.adapters.providers.openrouter import call_model
+from sample.adapters.providers.transport import close_client
 
 
 @pytest.mark.asyncio

@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "LLM consensus service with FastAPI, CLI, and observability stack."
 authors = ["Your Name <you@example.com>"]
 readme = "README.md"
-packages = [{ include = "sample" }]
+packages = [{ include = "sample" }, { include = "scoring_engine" }]
 
 [tool.poetry.scripts]
 lcs = "sample.cli.main:app"
@@ -53,3 +53,9 @@ target-version = "py311"
 [tool.pytest.ini_options]
 addopts = "-q"
 asyncio_mode = "auto"
+
+[tool.poetry.group.test.dependencies]
+pytest = "^8.0"
+pytest-cov = "^5.0"
+pytest-asyncio = "^0.24"
+pytest-mock = "^3.14"

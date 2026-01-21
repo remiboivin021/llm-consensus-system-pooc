@@ -1,9 +1,9 @@
 import pytest
 import typer
 
-from sample.cli.main import _run_consensus, consensus
+from sample.adapters.cli.main import _run_consensus, consensus
 from sample.contracts.response import ConsensusResult, Timing
-from sample.core.models import ProviderResult
+from sample.adapters.orchestration.models import ProviderResult
 
 
 @pytest.mark.asyncio

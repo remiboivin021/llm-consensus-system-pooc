@@ -5,7 +5,7 @@ import httpx
 import pytest
 import respx
 
-from sample.api.app import app
+from sample.adapters.api.app import app
 
 
 @pytest.mark.asyncio
@@ -132,7 +132,7 @@ async def test_api_times_out_returns_504(monkeypatch):
     async def fake_enforce(awaitable, timeout_ms):
         raise asyncio.TimeoutError()
 
-    monkeypatch.setattr("sample.api.routes.enforce_timeout", fake_enforce)
+    monkeypatch.setattr("sample.core.orchestrator.enforce_timeout", fake_enforce)
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:

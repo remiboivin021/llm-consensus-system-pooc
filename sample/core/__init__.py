@@ -1,0 +1,1 @@
+"""Functional core - pure business logic with zero I/O dependencies."""

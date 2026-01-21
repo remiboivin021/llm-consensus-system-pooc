@@ -2,8 +2,8 @@ import logging
 
 from fastapi import FastAPI
 
-from sample.observability import logging as otlp_logging
-from sample.observability import tracing as otlp_tracing
+from sample.adapters.observability import logging as otlp_logging
+from sample.adapters.observability import tracing as otlp_tracing
 
 
 def test_logging_uses_versioned_otlp_path(monkeypatch):

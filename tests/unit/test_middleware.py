@@ -3,7 +3,7 @@ import httpx
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
-from sample.api.middleware import RequestContextMiddleware
+from sample.adapters.api.middleware import RequestContextMiddleware
 
 
 def create_app(raise_error: bool = False) -> FastAPI:
@@ -55,7 +55,7 @@ async def test_middleware_logs_exception_with_stack(monkeypatch):
             self.calls.append({"event": event, **kwargs})
 
     logger_stub = LoggerStub()
-    monkeypatch.setattr("sample.api.middleware.logger", logger_stub)
+    monkeypatch.setattr("sample.adapters.api.middleware.logger", logger_stub)
 
     app = create_app(raise_error=True)
     transport = httpx.ASGITransport(app=app)

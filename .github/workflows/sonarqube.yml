@@ -1,0 +1,17 @@
+name: SonarCloud
+on: [push, pull_request]
+jobs:
+  sonar:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with: { fetch-depth: 0 }
+    - name: SonarQubeScan
+      uses: SonarSource/sonarqube-scan-action@v7
+      with:
+        args: >
+          -Dsonar.organization=remiboivin021
+          -Dsonar.projectKey=remiboivin021_llm-consensus-system-pooc
+          -Dsonar.python.coverage.reportPaths=coverage.xml
+      env: 
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

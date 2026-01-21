@@ -1,7 +1,7 @@
 import pytest
 
-from sample.core.models import fetch_provider_result
-from sample.providers.openrouter import STRUCTURED_PREAMBLE
+from sample.adapters.orchestration.models import fetch_provider_result
+from sample.adapters.providers.openrouter import STRUCTURED_PREAMBLE
 
 
 @pytest.mark.asyncio

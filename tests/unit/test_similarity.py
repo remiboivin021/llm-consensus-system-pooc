@@ -1,4 +1,4 @@
-from sample.core.similarity import cosine_similarity
+from sample.core.analysis.similarity import cosine_similarity
 
 
 def test_cosine_similarity_identical_vectors():

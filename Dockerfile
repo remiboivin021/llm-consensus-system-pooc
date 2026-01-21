@@ -12,4 +12,4 @@ RUN poetry config virtualenvs.create false && poetry install --no-root --without
 
 COPY . .
 
-CMD ["uvicorn", "sample.api.app:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "sample.adapters.api.app:app", "--host", "0.0.0.0", "--port", "8000"]
