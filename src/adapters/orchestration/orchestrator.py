@@ -153,6 +153,7 @@ class Orchestrator:
         start_time = time.perf_counter()
         strategy_label = strategy_label or getattr(self.judge, "method", "unknown")
         policy = self.policy_store.current()
+        self.policy = policy
         preflight_decision = apply_preflight_gating(
             policy,
             consensus_request.prompt,
@@ -178,7 +179,7 @@ class Orchestrator:
                 gate_reason=preflight_decision.reason,
             )
 
-        if preflight_decision and self.policy.gating_mode == "shadow":
+        if preflight_decision and policy.gating_mode == "shadow":
             logger.info(
                 "policy_preflight_shadow",
                 request_id=request_id,
