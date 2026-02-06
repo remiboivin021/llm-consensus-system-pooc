@@ -13,6 +13,11 @@ __all__ = [
     "run_event_callback_total",
     "run_event_callback_duration_seconds",
     "run_events_total",
+    "early_stop_samples_used",
+    "early_stop_decisions_total",
+    "early_stop_confidence",
+    "prompt_safety_decisions_total",
+    "prompt_safety_duration_seconds",
     "quality_score",
     "quality_score_stats",
     "provider_breaker_open_total",
@@ -20,6 +25,10 @@ __all__ = [
     "policy_reload_total",
     "policy_reload_duration_seconds",
     "policy_active_info",
+    "provider_resolution_failures_total",
+    "preamble_usage_total",
+    "output_validation_total",
+    "output_validation_reasks_total",
 ]
 
 http_request_duration_seconds = Histogram(
@@ -37,13 +46,13 @@ http_requests_total = Counter(
 llm_call_duration_seconds = Histogram(
     "llm_call_duration_seconds",
     "Duration of LLM provider calls in seconds",
-    ["model", "outcome"],
+    ["provider", "model", "outcome"],
 )
 
 llm_calls_total = Counter(
     "llm_calls_total",
     "Total LLM provider calls",
-    ["model", "outcome"],
+    ["provider", "model", "outcome"],
 )
 
 consensus_duration_seconds = Histogram(
@@ -68,6 +77,39 @@ run_events_total = Counter(
     "run_events_total",
     "Total consensus runs by outcome",
     ["outcome"],
+)
+
+early_stop_samples_used = Histogram(
+    "early_stop_samples_used",
+    "Samples consumed before stopping early",
+    ["strategy"],
+    buckets=[1, 2, 3, 4, 5, 8, 10],
+)
+
+early_stop_decisions_total = Counter(
+    "early_stop_decisions_total",
+    "Early-stop outcomes",
+    ["strategy", "reason"],
+)
+
+early_stop_confidence = Histogram(
+    "early_stop_confidence",
+    "Consensus confidence observed at stop",
+    ["strategy"],
+    buckets=[0.0, 0.25, 0.5, 0.66, 0.75, 0.85, 0.95, 1.0],
+)
+
+prompt_safety_decisions_total = Counter(
+    "prompt_safety_decisions_total",
+    "Prompt safety decisions by mode/reason",
+    ["mode", "action", "reason"],
+)
+
+prompt_safety_duration_seconds = Histogram(
+    "prompt_safety_duration_seconds",
+    "Prompt safety detector duration",
+    ["mode"],
+    buckets=[0.001, 0.005, 0.01, 0.02, 0.05],
 )
 
 quality_score = Histogram(
@@ -112,6 +154,42 @@ provider_breaker_state = Gauge(
     "provider_breaker_state",
     "Current breaker state by model (0=closed,0.5=half_open,1=open)",
     ["model"],
+)
+
+provider_resolution_failures_total = Counter(
+    "provider_resolution_failures_total",
+    "Total provider resolution failures (unknown provider, unsupported model, etc.)",
+    ["reason"],
+)
+
+output_validation_total = Counter(
+    "output_validation_total",
+    "Outcome of output validation checks",
+    ["outcome", "reason"],
+)
+
+output_validation_reasks_total = Counter(
+    "output_validation_reasks_total",
+    "Count of validation-triggered re-asks",
+    ["outcome"],
+)
+
+pii_redaction_runs_total = Counter(
+    "pii_redaction_runs_total",
+    "Count of PII redaction executions",
+    ["applied"],
+)
+
+pii_redactions_total = Counter(
+    "pii_redactions_total",
+    "Total redacted PII occurrences by type",
+    ["type"],
+)
+
+preamble_usage_total = Counter(
+    "preamble_usage_total",
+    "Preamble selection outcomes",
+    ["key", "outcome"],
 )
 
 

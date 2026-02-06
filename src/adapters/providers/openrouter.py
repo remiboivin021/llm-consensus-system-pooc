@@ -6,6 +6,8 @@ from typing import List, Tuple
 import httpx
 
 from src.contracts.errors import ErrorEnvelope
+from src.adapters.providers.base import ProviderAdapter
+from src.adapters.providers.registry import register_provider
 from src.adapters.providers.transport import get_client
 
 import json
@@ -54,6 +56,38 @@ def __getattr__(name: str):
     if name == "PYTHON_CODE_FORMAT_PREAMBLE":
         return get_python_code_format_preamble()
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+class OpenRouterProvider(ProviderAdapter):
+    name = "openrouter"
+
+    def supports(self, model: str) -> bool:
+        return True
+
+    async def call(
+        self,
+        prompt: str,
+        model: str,
+        request_id: str,
+        system_preamble: str | None = None,
+        provider_timeout_ms: int | None = None,
+    ):
+        content, latency_ms, error = await call_model(
+            prompt,
+            model,
+            request_id,
+            system_preamble=system_preamble,
+            provider_timeout_ms=provider_timeout_ms,
+        )
+        from src.adapters.orchestration.models import ProviderResult  # local import to avoid cycle
+
+        return ProviderResult(
+            model=model,
+            content=content,
+            latency_ms=latency_ms,
+            error=error,
+            provider=self.name,
+        )
 
 
 def _build_messages(prompt: str, system_preamble: str | None) -> List[dict]:
@@ -129,3 +163,16 @@ async def call_model(
             latency_ms,
             ErrorEnvelope(type=error_type, message=str(exc), retryable=False, status_code=None),
         )
+
+
+def register_default_openrouter() -> None:
+    """Idempotently register OpenRouter as the default provider."""
+    try:
+        register_provider(OpenRouterProvider(), default=True)
+    except ValueError:
+        # Already registered; safe to ignore for idempotency
+        pass
+
+
+# Register on import so default provider is always available.
+register_default_openrouter()

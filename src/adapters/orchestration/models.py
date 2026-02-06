@@ -6,11 +6,8 @@ from typing import Iterable
 from src.contracts.errors import ErrorEnvelope
 from src.contracts.response import ModelResponse
 from src.contracts.run_event import RunEvent
-from src.adapters.providers.openrouter import (
-    STRUCTURED_PREAMBLE,
-    call_model,
-    get_python_code_format_preamble,
-)
+from src.errors import LcsError
+from src.errors import LcsError
 
 
 @dataclass
@@ -18,12 +15,14 @@ class ProviderResult:
     model: str
     content: str | None
     latency_ms: int | None
+    provider: str = "openrouter"
     error: ErrorEnvelope | None = None
     breaker_state: str | None = None
 
     def to_contract(self) -> ModelResponse:
         return ModelResponse(
             model=self.model,
+            provider=self.provider,
             content=self.content,
             latency_ms=self.latency_ms,
             error=self.error,
@@ -38,7 +37,15 @@ def build_model_responses(
     for model, result in zip(models, results):
         if isinstance(result, Exception):
             error = ErrorEnvelope(type="internal", message=str(result), retryable=False)
-            responses.append(ModelResponse(model=model, content=None, latency_ms=None, error=error))
+            responses.append(
+                ModelResponse(
+                    model=model,
+                    provider="unknown",
+                    content=None,
+                    latency_ms=None,
+                    error=error,
+                )
+            )
         else:
             responses.append(result.to_contract())
     return responses
@@ -119,20 +126,57 @@ async def fetch_provider_result(
     model: str,
     request_id: str,
     normalize_output: bool,
+    preamble_key: str | None,
     include_scores: bool = False,
     provider_timeout_ms: int | None = None,
+    provider_overrides: dict[str, str] | None = None,
 ) -> ProviderResult:
+    # Lazy imports to avoid import cycles with provider registry
+    from src.adapters.providers import registry
+    from src.adapters.providers.openrouter import (
+        STRUCTURED_PREAMBLE,
+        get_python_code_format_preamble,
+        register_default_openrouter,
+    )
+    from src.adapters.observability.metrics import provider_resolution_failures_total
+
+    # Determine preamble once per call
     system_preamble = None
     if normalize_output:
+        # Preamble selected upstream; fallback to structured if missing
         system_preamble = STRUCTURED_PREAMBLE
     elif include_scores:
         system_preamble = get_python_code_format_preamble()
-    
-    content, latency_ms, error = await call_model(
+
+    register_default_openrouter()
+
+    provider_name_override = provider_overrides.get(model) if provider_overrides else None
+    try:
+        provider, stripped_model = registry.resolve_provider(model, override_name=provider_name_override)
+    except Exception as exc:
+        reason = "unknown"
+        if isinstance(exc, LcsError):
+            reason = exc.code
+        try:
+            provider_resolution_failures_total.labels(reason=reason).inc()
+        except Exception:
+            pass
+        return ProviderResult(
+            model=model,
+            content=None,
+            latency_ms=None,
+            error=ErrorEnvelope(type="config_error", message=str(exc), retryable=False, status_code=400),
+            provider="unknown",
+        )
+
+    result = await provider.call(
         prompt,
-        model,
+        stripped_model,
         request_id,
         system_preamble=system_preamble,
         provider_timeout_ms=provider_timeout_ms,
     )
-    return ProviderResult(model=model, content=content, latency_ms=latency_ms, error=error)
+    # Ensure the returned ProviderResult reports the normalized model name
+    result.model = stripped_model
+    result.provider = getattr(provider, "name", None)
+    return result
