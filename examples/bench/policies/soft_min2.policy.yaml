@@ -1,0 +1,12 @@
+policy_id: bench-soft-min2
+description: "Soft gate when fewer than 2 models"
+gating_mode: soft
+guardrails:
+  request:
+    prompt_min_chars: 1
+    prompt_max_chars: 8000
+    models:
+      min_models: 2
+      max_models: 5
+      unique_required: true
+      allowed_models: '*'

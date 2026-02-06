@@ -1,0 +1,26 @@
+{
+  "seed": 123,
+  "cases": [
+    {
+      "case_id": "majority-pass",
+      "prompt": "Choose better code snippet.",
+      "models": ["m1", "m2"],
+      "provider_outputs": [
+        {"model": "m1", "content": "alpha beta gamma"},
+        {"model": "m2", "content": "delta epsilon"}
+      ],
+      "strategy": "majority_vote",
+      "expected_winner": "m1"
+    },
+    {
+      "case_id": "pre-gate-too-few-models",
+      "prompt": "hi",
+      "models": ["single"],
+      "provider_outputs": [
+        {"model": "single", "content": "only one"}
+      ],
+      "policy_path": "examples/bench/policies/soft_min2.policy.yaml",
+      "expected_gate": "pre"
+    }
+  ]
+}
