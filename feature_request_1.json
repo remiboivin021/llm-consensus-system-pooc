@@ -1,0 +1,229 @@
+{
+  "learned": [
+    "LCS is a Python library-only consensus engine; host apps own API/CLI, auth, rate limits, and storage (docs/overview.md, README.md).",
+    "Core flow: Pydantic contracts -> orchestrator -> OpenRouter provider -> optional scoring -> judges -> policy gating; observability is opt-in Prometheus/OTEL (docs/architecture/c3-component.md, docs/operations.md).",
+    "Policies are YAML-driven with shadow/soft gating, model limits, and timeout overrides; defaults in policies/default.policy.yaml."
+  ],
+  "clarifying_questions": [
+    "Keep scope library-only, or should we ship a reference FastAPI surface again? (answered: library-only; any API stays in host apps)",
+    "Are non-OpenRouter providers acceptable if added as optional adapters (no mandatory deps)? (answered: stick to OpenRouter for now; others optional later)",
+    "Do you want built-in optional run logging (SQLite/file) inside the library, or should logging stay host-owned? (answered: keep logging host-owned; provide callbacks/helpers only)",
+    "Should default shipping policy remain shadow or move to soft for production guidance? (answered: keep OSS default shadow; document strict soft preset for prod)",
+    "Priority balance: code-quality scoring vs general-text consensus—should scoring remain optional or become first-class? (answered: keep scoring optional/lazy; add light text-only extra; focus on stability/perf)"
+  ],
+  "assumptions": [
+    "Library-only scope for core; any API/CLI remains example-only to avoid transport lock-in.",
+    "OpenRouter is primary; other providers must be optional to prevent extra deps for default users.",
+    "Persistence remains host-owned; LCS emits callbacks/metrics but does not bundle storage.",
+    "Default policy shipped as shadow; stricter soft gating is opt-in for regulated deployments (documented as \"strict\" preset)."
+  ],
+  "external_landscape": {
+    "comparables": [
+      {
+        "name": "llm-consensus (LangChain)",
+        "summary": "LangChain-compatible framework with majority/weighted/ranked strategies and multi-round peer feedback.",
+        "source": "https://pypi.org/project/llm-consensus/"
+      },
+      {
+        "name": "Router-R1",
+        "summary": "RL-based multi-round router/aggregator that interleaves think/route actions across multiple models.",
+        "source": "https://ulab-uiuc.github.io/Router-R1/"
+      },
+      {
+        "name": "LLMRouter RouterR1",
+        "summary": "Agentic router runtime (vLLM) with YAML configs, showing operational knobs for routing LLM pools.",
+        "source": "https://ulab-uiuc.github.io/LLMRouter/tutorials/notebooks/router-r1/"
+      },
+      {
+        "name": "multi-llm-consensus",
+        "summary": "Moderator-based LangGraph library that can call multiple providers and use web search for real-time data.",
+        "source": "https://pypi.org/project/multi-llm-consensus/"
+      }
+    ],
+    "research_papers": [
+      {
+        "title": "Self-Para-Consistency (ACL 2024)",
+        "takeaway": "Paraphrase-based self-consistency cuts sample count while improving reasoning quality; inspires early-stop sampling hooks.",
+        "source": "https://aclanthology.org/2024.findings-acl.842/"
+      },
+      {
+        "title": "Universal Self-Consistency (DeepMind 2023)",
+        "takeaway": "LLM-as-judge to pick the most consistent candidate across free-form outputs; supports adding judge-based scoring mode.",
+        "source": "https://deepmind.google/research/publications/universal-self-consistency-with-large-language-models/"
+      },
+      {
+        "title": "Dynamic Self-Consistency (RASC, 2024)",
+        "takeaway": "Early-stopping weighted voting reduces sample cost ~80% while maintaining accuracy; motivates configurable early-stop.",
+        "source": "https://paperswithcode.com/paper/dynamic-self-consistency-leveraging-reasoning"
+      },
+      {
+        "title": "Multi-Perspective Self-Consistency for Code (ACL 2024)",
+        "takeaway": "Graph-based aggregation of diverse reasoning paths boosts code benchmarks, supporting multi-view scoring extensions.",
+        "source": "https://aclanthology.org/2024.acl-long.78/"
+      }
+    ]
+  },
+  "feature_backlog": [
+    {
+      "title": "Add pluggable provider registry with OpenRouter default",
+      "motivation": "Reduce lock-in and enable optional adapters without new core deps.",
+      "user_story": "When I supply provider factories, I want orchestrator to route via a uniform port so I can add OpenAI/Ollama without forking.",
+      "scope": "Provider interface + adapter plug points; OpenRouter remains built-in; optional extras for others.",
+      "contracts": "Adapters return ProviderResult; timeouts enforced; deterministic call ordering.",
+      "risks_mitigations": "Config bloat mitigated with sane defaults and validation.",
+      "observability": "Per-provider labels on metrics/traces; adapter name in logs.",
+      "test_strategy": "Mock adapters, timeout/failure guardrails, contract validation tests.",
+      "effort": "M",
+      "dependencies": "None"
+    },
+    {
+      "title": "Support policy hot-reload with validation telemetry",
+      "motivation": "Ops can tweak gates without restart and detect invalid policies early.",
+      "user_story": "When I update a YAML policy, I want LCS to reload safely and emit a status if parsing fails.",
+      "scope": "Manual reload API + optional watcher; atomic swap on success; last-good fallback on error.",
+      "contracts": "Reload is thread-safe; rejects invalid schema; preserves gating mode.",
+      "risks_mitigations": "Race conditions mitigated via locks and debounce; failure falls back to prior policy.",
+      "observability": "Reload success/fail counters; current policy_id gauge.",
+      "test_strategy": "Unit tests for success/failure reload, concurrent calls.",
+      "effort": "M",
+      "dependencies": "Optional watchdog extra"
+    },
+    {
+      "title": "Add reliability-weighted judge",
+      "motivation": "Down-weight providers with recent failures/timeouts to raise consensus robustness.",
+      "user_story": "When a model times out often, I want its vote weighted lower automatically.",
+      "scope": "New judge strategy using sliding window stats; fallback to majority if data sparse.",
+      "contracts": "Weights bounded [0,1]; deterministic ties; respects policy guardrails.",
+      "risks_mitigations": "Stale stats handled with TTL; expose config.",
+      "observability": "Weight histograms; judge label in metrics.",
+      "test_strategy": "Deterministic sims with injected latencies/failures.",
+      "effort": "M",
+      "dependencies": "Metrics cache"
+    },
+    {
+      "title": "Offer ranked-choice consensus mode",
+      "motivation": "Ranked voting can outperform simple majority on divergent candidates.",
+      "user_story": "When responses disagree, I want ranked tally over similarity ordering to pick the most broadly acceptable answer.",
+      "scope": "IRV/Borda over cosine-ranked candidates; feature-flagged.",
+      "contracts": "Deterministic ranking; confidence from vote margins.",
+      "risks_mitigations": "Complexity mitigated with opt-in flag and docs.",
+      "observability": "Vote margin metric; debug log of rankings.",
+      "test_strategy": "Synthetic ballots and regression cases.",
+      "effort": "S/M",
+      "dependencies": "None"
+    },
+    {
+      "title": "Early-stop self-consistency helper",
+      "motivation": "Cut sampling cost/latency while keeping accuracy per dynamic self-consistency research.",
+      "user_story": "When sampling one model multiple times, I want to stop early once confidence passes a threshold.",
+      "scope": "Sampling loop helper + thresholds; min samples guard.",
+      "contracts": "Deterministic stop condition; reports samples used.",
+      "risks_mitigations": "Premature stops mitigated with minimum samples and backoff.",
+      "observability": "samples_used metric; confidence trace attribute.",
+      "test_strategy": "Controlled mocks with known majority; threshold edge tests.",
+      "effort": "M",
+      "dependencies": "None"
+    },
+    {
+      "title": "Add structured run-event callback hook",
+      "motivation": "Let hosts persist/audit runs without bundling storage.",
+      "user_story": "When a run completes, I want a callback with sanitized metadata I can log externally without blocking LCS.",
+      "scope": "Optional callback on orchestrator/client; non-blocking wrapper with timeout.",
+      "contracts": "Callback exceptions swallowed and metered; event schema documented.",
+      "risks_mitigations": "Misbehaving callbacks isolated with try/except and timeout.",
+      "observability": "event_callback_fail counter.",
+      "test_strategy": "Callback success/fail, timeout path.",
+      "effort": "S",
+      "dependencies": "None"
+    },
+    {
+      "title": "Ship preamble catalog for normalize_output",
+      "motivation": "Provide reusable structured prompts for code/Q&A without burdening users.",
+      "user_story": "When normalize_output=True, I want to select a pre-defined preamble by key.",
+      "scope": "Small catalog under src/config/prompts; policy flag controls allow list.",
+      "contracts": "Backward-compatible defaults; preamble selection deterministic.",
+      "risks_mitigations": "Prompt drift mitigated with versioned IDs and docs.",
+      "observability": "Metric counting normalized runs.",
+      "test_strategy": "Snapshot tests for chosen preamble; policy deny case.",
+      "effort": "S",
+      "dependencies": "None"
+    },
+    {
+      "title": "FastAPI metrics router helper (optional)",
+      "motivation": "Make exposing Prometheus bytes trivial for host apps.",
+      "user_story": "As a host app, I want a plug-in router to serve render_metrics() without wiring boilerplate.",
+      "scope": "ASGI router helper; import guarded so FastAPI stays optional.",
+      "contracts": "No server started; pure router; returns bytes response.",
+      "risks_mitigations": "Optional import guard prevents unwanted deps.",
+      "observability": "n/a (it exposes metrics).",
+      "test_strategy": "ASGI unit test ensuring /metrics returns data.",
+      "effort": "S",
+      "dependencies": "fastapi optional extra"
+    },
+    {
+      "title": "Confidence calibration plugin",
+      "motivation": "Provide calibrated confidence for downstream thresholds.",
+      "user_story": "When I consume results, I want calibrated confidence backed by offline stats.",
+      "scope": "Pluggable calibrator (identity default); versioned calibration map.",
+      "contracts": "If calibration absent, identity; inputs/outputs in [0,1].",
+      "risks_mitigations": "Small-sample misuse mitigated with minimum-sample guard and warning flag.",
+      "observability": "Calibration version tag in result; applied gauge.",
+      "test_strategy": "Synthetic calibration curves and identity default.",
+      "effort": "M",
+      "dependencies": "Optional numpy/scipy"
+    },
+    {
+      "title": "Deterministic offline bench harness",
+      "motivation": "Enable CI regression without live provider calls.",
+      "user_story": "When I run CI, I want a seedable harness that replays canned provider outputs to test judges/gating.",
+      "scope": "Fixtures + CLI under examples/; no network.",
+      "contracts": "Deterministic order; supports multiple strategies.",
+      "risks_mitigations": "Drift mitigated by refresh guidance and versioned fixtures.",
+      "observability": "Bench report file; runtime metric optional.",
+      "test_strategy": "Harness self-test; fixture integrity checks.",
+      "effort": "S",
+      "dependencies": "None"
+    },
+    {
+      "title": "Provider circuit-breaker with backoff",
+      "motivation": "Reduce cascading failures during provider outages.",
+      "user_story": "When provider errors spike, I want LCS to short-circuit quickly and surface retryable errors.",
+      "scope": "In-memory breaker per model with cool-down; respects policy ratios.",
+      "contracts": "Breaker state observable; never blocks successes.",
+      "risks_mitigations": "False trips mitigated with thresholds/decay.",
+      "observability": "Breaker open/close metrics.",
+      "test_strategy": "Simulated failure bursts and recovery.",
+      "effort": "M",
+      "dependencies": "None"
+    },
+    {
+      "title": "Optional cost/latency accounting",
+      "motivation": "Help hosts trade price vs speed across models.",
+      "user_story": "When I pass per-model price hints, I want estimated cost and latency summary in results.",
+      "scope": "Extend ModelResponse metadata; pricing config optional; no billing calls.",
+      "contracts": "Defaults to zero; deterministic accumulation; no external IO.",
+      "risks_mitigations": "Stale prices mitigated with versioned config and docs.",
+      "observability": "cost_total gauge; latency already covered.",
+      "test_strategy": "Metadata propagation tests; absent-config path.",
+      "effort": "M",
+      "dependencies": "None"
+    }
+  ],
+  "roadmap": {
+    "horizon_1": [
+      "Provider registry core (pluggable adapters)",
+      "Policy hot-reload + telemetry",
+      "Run-event callback hook",
+      "Ranked-choice judge (flagged)",
+      "FastAPI metrics router helper"
+    ],
+    "horizon_2": [
+      "Reliability-weighted judge + circuit-breaker",
+      "Early-stop self-consistency",
+      "Confidence calibration",
+      "Preamble catalog + normalization metrics",
+      "Deterministic bench harness",
+      "Optional cost/latency accounting"
+    ]
+  }
+}
