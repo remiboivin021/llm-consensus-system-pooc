@@ -10,6 +10,9 @@ __all__ = [
     "llm_call_duration_seconds",
     "llm_calls_total",
     "consensus_duration_seconds",
+    "run_event_callback_total",
+    "run_event_callback_duration_seconds",
+    "run_events_total",
     "quality_score",
     "quality_score_stats",
     "provider_breaker_open_total",
@@ -47,6 +50,24 @@ consensus_duration_seconds = Histogram(
     "consensus_duration_seconds",
     "Duration of consensus computation in seconds",
     ["strategy"],
+)
+
+run_event_callback_total = Counter(
+    "run_event_callback_total",
+    "Total run-event callbacks",
+    ["outcome"],
+)
+
+run_event_callback_duration_seconds = Histogram(
+    "run_event_callback_duration_seconds",
+    "Duration of run-event callbacks in seconds",
+    ["outcome"],
+)
+
+run_events_total = Counter(
+    "run_events_total",
+    "Total consensus runs by outcome",
+    ["outcome"],
 )
 
 quality_score = Histogram(

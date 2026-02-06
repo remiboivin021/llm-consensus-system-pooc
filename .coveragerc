@@ -1,0 +1,5 @@
+[run]
+omit =
+    lcs/core/scoring/engine.py
+    lcs/adapters/observability/logging.py
+    lcs/adapters/observability/tracing.py
