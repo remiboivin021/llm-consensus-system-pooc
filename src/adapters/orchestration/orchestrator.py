@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Iterable
+from typing import Iterable, Callable, Awaitable, Any
 
 from opentelemetry import trace
 
@@ -19,11 +19,15 @@ from src.adapters.observability.metrics import (
     quality_score_stats,
     provider_breaker_open_total,
     provider_breaker_state,
+    run_event_callback_total,
+    run_event_callback_duration_seconds,
+    run_events_total,
 )
 from src.adapters.orchestration.models import (
     ProviderResult,
     build_model_responses,
     fetch_provider_result,
+    build_run_event,
 )
 from src.adapters.orchestration.timeouts import enforce_timeout
 from src.core.consensus.base import Judge
@@ -69,12 +73,12 @@ class Orchestrator:
         self.settings = get_settings()
         self.judge = judge or ScorePreferredJudge()
         self.policy_store = policy_store or PolicyStore(loader=load_policy)
-        self.policy = self.policy_store.current()
         self.breakers = BreakerManager(self._breaker_config())
 
     def _breaker_config(self) -> BreakerConfig:
         # Policy is authoritative; fallback handled by loader defaults.
-        return getattr(self.policy, "breaker", BreakerConfig())
+        policy = self.policy_store.current()
+        return getattr(policy, "breaker", BreakerConfig())
 
     async def _call_single_model(
         self,
@@ -153,7 +157,6 @@ class Orchestrator:
         start_time = time.perf_counter()
         strategy_label = strategy_label or getattr(self.judge, "method", "unknown")
         policy = self.policy_store.current()
-        self.policy = policy
         preflight_decision = apply_preflight_gating(
             policy,
             consensus_request.prompt,
