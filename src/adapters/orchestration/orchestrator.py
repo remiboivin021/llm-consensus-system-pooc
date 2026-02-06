@@ -68,7 +68,8 @@ class Orchestrator:
     def __init__(self, judge: Judge | None = None, policy_store: PolicyStore | None = None) -> None:
         self.settings = get_settings()
         self.judge = judge or ScorePreferredJudge()
-        self.policy_store = policy_store or PolicyStore()
+        self.policy_store = policy_store or PolicyStore(loader=load_policy)
+        self.policy = self.policy_store.current()
         self.breakers = BreakerManager(self._breaker_config())
 
     def _breaker_config(self) -> BreakerConfig:
