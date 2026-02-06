@@ -25,7 +25,15 @@ async def test_policy_e2e_timeout_overrides_settings(monkeypatch):
         captured["timeout"] = timeout
         return await coro
 
-    async def fake_fetch(prompt, model, request_id, normalize_output, include_scores, provider_timeout_ms=None):
+    async def fake_fetch(
+        prompt,
+        model,
+        request_id,
+        normalize_output,
+        include_scores,
+        provider_timeout_ms=None,
+        provider_overrides=None,
+    ):
         return ProviderResult(model=model, content="ok", latency_ms=1, error=None)
 
     monkeypatch.setattr("src.adapters.orchestration.orchestrator.get_settings", lambda: DummySettings())
@@ -50,7 +58,15 @@ async def test_policy_provider_timeout_overrides_settings(monkeypatch):
     async def fake_enforce_timeout(coro, timeout):
         return await coro
 
-    async def fake_fetch(prompt, model, request_id, normalize_output, include_scores, provider_timeout_ms=None):
+    async def fake_fetch(
+        prompt,
+        model,
+        request_id,
+        normalize_output,
+        include_scores,
+        provider_timeout_ms=None,
+        provider_overrides=None,
+    ):
         captured["provider_timeout_ms"] = provider_timeout_ms
         return ProviderResult(model=model, content="ok", latency_ms=1, error=None)
 

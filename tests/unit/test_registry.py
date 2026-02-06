@@ -16,6 +16,7 @@ def test_list_strategies_has_required_entries():
     assert "majority_cosine" in strategies
     assert "score_preferred" in strategies
     assert "scoring" in strategies
+    assert "ranked_choice" in strategies
 
 
 def test_get_strategy_raises_on_unknown():

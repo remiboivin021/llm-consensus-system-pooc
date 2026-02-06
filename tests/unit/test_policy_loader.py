@@ -85,7 +85,7 @@ guardrails:
     )
     store = PolicyStore(str(path))
     result = store.reload()
-    assert result.status == "success"
+    assert result.status == "accepted"
     assert store.current().policy_id == "reload-1"
 
 
@@ -110,8 +110,8 @@ guardrails:
 
     path.write_text(":::", encoding="utf-8")
     result = store.reload()
-    assert result.status == "failure"
-    assert result.error_reason in {"invalid_yaml", "validation_error"}
+    assert result.status == "rejected"
+    assert result.reason in {"invalid_yaml", "invalid_schema"}
     assert store.current().policy_id == "good"
 
 
@@ -140,3 +140,37 @@ guardrails:
     store.stop_watcher()
     assert store.current().policy_id == "watch-2"
 
+
+def test_policy_store_reload_unchanged_short_circuits(tmp_path):
+    path = tmp_path / "policy.yaml"
+    path.write_text(
+        """
+policy_id: unchanged
+guardrails:
+  request:
+    prompt_min_chars: 1
+    prompt_max_chars: 10
+    models:
+      min_models: 1
+      max_models: 2
+      unique_required: true
+      allowed_models: '*'
+""",
+        encoding="utf-8",
+    )
+    store = PolicyStore(str(path))
+    first = store.reload()
+    assert first.status == "accepted"
+    second = store.reload()
+    assert second.status == "unchanged"
+    assert second.policy_id == "unchanged"
+
+
+def test_policy_store_reload_missing_file_rejected(tmp_path):
+    path = tmp_path / "missing.yaml"
+    store = PolicyStore(loader=lambda p=None: load_policy(None))  # init with default
+    from src.policy.models import PolicyReloadRequest
+
+    result = store.reload(PolicyReloadRequest(path=str(path)))
+    assert result.status == "rejected"
+    assert result.reason == "missing_file"

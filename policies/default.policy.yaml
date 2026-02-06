@@ -2,6 +2,16 @@ policy_id: default-v1
 description: "Baseline policy: safe defaults, minimal blocking."
 gating_mode: shadow
 normalize_allowed: false
+preambles:
+  allow: '*'
+prefilter:
+  pii:
+    enabled: false
+    rules:
+      - email
+      - phone
+      - ipv4
+    map_limit: 500
 breaker:
   enabled: true
   failure_threshold: 3

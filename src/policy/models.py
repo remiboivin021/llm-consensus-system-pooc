@@ -2,8 +2,11 @@ from __future__ import annotations
 
 from functools import lru_cache
 from typing import Literal
+from datetime import datetime
 
 from pydantic import BaseModel, Field, field_validator
+
+from src.contracts.safety import PromptSafetyConfig
 
 
 class JudgeConfig(BaseModel):
@@ -73,6 +76,21 @@ class BreakerConfig(BaseModel):
     failure_decay_ms: int = Field(default=60000, ge=1)
 
 
+class PreambleConfig(BaseModel):
+    allow: list[str] | str = "*"
+
+
+class PiiPrefilter(BaseModel):
+    enabled: bool = False
+    rules: list[str] = Field(default_factory=lambda: ["email", "phone", "ipv4"])
+    map_limit: int = Field(default=500, ge=0)
+
+
+class PrefilterConfig(BaseModel):
+    pii: PiiPrefilter = Field(default_factory=PiiPrefilter)
+    prompt_safety: PromptSafetyConfig = Field(default_factory=PromptSafetyConfig)
+
+
 class Policy(BaseModel):
     policy_id: str
     description: str | None = None
@@ -83,6 +101,33 @@ class Policy(BaseModel):
     guardrails: Guardrails = Field(default_factory=Guardrails)
     timeouts: Timeouts | None = None
     breaker: BreakerConfig = Field(default_factory=BreakerConfig)
+    preambles: PreambleConfig = Field(default_factory=PreambleConfig)
+    prefilter: PrefilterConfig = Field(default_factory=PrefilterConfig)
+
+
+class PolicyMeta(BaseModel):
+    path: str | None = None
+    mtime: float | None = None
+    content_hash: str | None = None
+    loaded_at: datetime
+    source: Literal["startup", "manual", "watcher"] = "startup"
+
+
+class PolicyReloadRequest(BaseModel):
+    path: str | None = None
+    source: Literal["manual", "watcher", "startup"] = "manual"
+    force: bool = False
+
+
+class PolicyReloadResult(BaseModel):
+    status: Literal["accepted", "rejected", "unchanged"]
+    policy_id: str | None
+    version: str | int | None = None
+    path: str | None = None
+    reason: str | None = None
+    validation_errors: list[str] | None = None
+    loaded_at: datetime
+    previous_policy_id: str | None = None
 
 
 @lru_cache(maxsize=1)

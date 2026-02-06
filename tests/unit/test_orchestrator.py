@@ -30,7 +30,15 @@ async def test_orchestrator_rejects_prompt(monkeypatch):
 async def test_orchestrator_runs_with_scores(monkeypatch):
     monkeypatch.setattr("src.adapters.orchestration.orchestrator.get_settings", lambda: DummySettings(1000))
 
-    async def fake_fetch(prompt, model, request_id, normalize_output, include_scores, provider_timeout_ms=None):
+    async def fake_fetch(
+        prompt,
+        model,
+        request_id,
+        normalize_output,
+        include_scores,
+        provider_timeout_ms=None,
+        provider_overrides=None,
+    ):
         return ProviderResult(model=model, content="def foo():\n    return 1", latency_ms=50)
 
     monkeypatch.setattr("src.adapters.orchestration.orchestrator.fetch_provider_result", fake_fetch)
@@ -44,3 +52,7 @@ async def test_orchestrator_runs_with_scores(monkeypatch):
     assert result.score_stats is not None
     assert result.score_stats.count == 2
     assert result.winner in {"m1", "m2", None}  # winner may be None if scores tie to fallback
+    assert result.calibrated_confidence is not None
+    assert result.calibration_version == "identity"
+    assert result.calibration_applied is False
+    assert result.calibrated_confidence == result.confidence

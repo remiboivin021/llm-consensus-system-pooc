@@ -4,7 +4,7 @@ import os
 import threading
 import time
 from pathlib import Path
-from typing import Callable, Literal
+from typing import Callable
 
 import yaml
 from pydantic import ValidationError
@@ -15,7 +15,13 @@ from src.adapters.observability.metrics import (
     policy_reload_duration_seconds,
     policy_reload_total,
 )
-from src.policy.models import Policy, default_policy_path
+from src.policy.models import (
+    Policy,
+    PolicyMeta,
+    PolicyReloadRequest,
+    PolicyReloadResult,
+    default_policy_path,
+)
 
 logger = get_logger()
 
@@ -23,6 +29,8 @@ _BUILTIN_POLICY = {
     "policy_id": "default-v1",
     "description": "Built-in fallback policy",
     "gating_mode": "shadow",
+    "preambles": {"allow": "*"},
+    "prefilter": {"pii": {"enabled": False, "rules": ["email", "phone", "ipv4"], "map_limit": 500}},
     "breaker": {
         "enabled": True,
         "failure_threshold": 3,
@@ -44,16 +52,6 @@ _BUILTIN_POLICY = {
     },
     "consensus": {"judge": {"type": "score_preferred"}, "accept": {"min_confidence": 0.0}},
 }
-
-
-class PolicyReloadResult(Policy):
-    """Policy reload result with status/telemetry fields."""
-
-    status: Literal["success", "failure"]
-    source: Literal["manual", "watcher"] = "manual"
-    path: str | None = None
-    error_reason: str | None = None
-    reloaded_at_ms: int | None = None
 
 
 def load_policy(path: str | None = None) -> Policy:
@@ -80,13 +78,13 @@ def load_policy(path: str | None = None) -> Policy:
 
 def _classify_error(exc: Exception) -> str:
     if isinstance(exc, FileNotFoundError):
-        return "file_not_found"
+        return "missing_file"
     if isinstance(exc, PermissionError):
         return "permission_denied"
     if isinstance(exc, yaml.YAMLError):
         return "invalid_yaml"
     if isinstance(exc, (ValidationError, ValueError)):
-        return "validation_error"
+        return "invalid_schema"
     return "unexpected_error"
 
 
@@ -107,67 +105,140 @@ def _emit_metrics(outcome: str, source: str, reason: str | None, policy: Policy 
 class PolicyStore:
     """Thread-safe holder that supports manual reloads and optional watching."""
 
-    def __init__(self, path: str | None = None, loader: Callable[[str | None], Policy] | None = None, policy: Policy | None = None) -> None:
+    def __init__(
+        self,
+        path: str | None = None,
+        loader: Callable[[str | None], Policy] | None = None,
+        policy: Policy | None = None,
+    ) -> None:
         self._loader = loader or load_policy
         self._path = path
-        self._lock = threading.Lock()
-        self._last_mtime = self._path_mtime(path)
-        self._policy = policy or self._loader(path)
-        _emit_metrics("success", "init", None, self._policy, 0)
+        self._lock = threading.RLock()
+        self._policy = policy or self._call_loader(path)
+        mtime = self._path_mtime(path)
+        self._meta = PolicyMeta(path=path, mtime=mtime, content_hash=None, loaded_at=self._now(), source="startup")
+        self._initial_reload_done = False
+        _emit_metrics("success", "startup", None, self._policy, 0)
         self._watch_thread: threading.Thread | None = None
         self._stop_event: threading.Event | None = None
 
-    def current(self) -> Policy:
-        return self._policy
+    @staticmethod
+    def _now():
+        import datetime as _dt
 
-    def reload(self, path: str | None = None, source: Literal["manual", "watcher"] = "manual") -> PolicyReloadResult:
-        started = time.perf_counter()
+        return _dt.datetime.utcnow()
+
+    def current(self) -> Policy:
         with self._lock:
-            candidate = path or self._path or os.environ.get("POLICY_FILE") or default_policy_path()
-            reason: str | None = None
-            try:
-                policy = self._loader(candidate)
-                self._policy = policy
-                self._path = candidate
-                self._last_mtime = self._path_mtime(candidate)
-                elapsed_ms = int((time.perf_counter() - started) * 1000)
-                _emit_metrics("success", source, None, policy, elapsed_ms)
+            return self._policy
+
+    def meta(self) -> PolicyMeta:
+        with self._lock:
+            return self._meta
+
+    def reload(self, req: PolicyReloadRequest | None = None) -> PolicyReloadResult:
+        req = req or PolicyReloadRequest(path=self._path, source="manual")
+        started = time.perf_counter()
+        candidate = req.path or self._path or os.environ.get("POLICY_FILE") or default_policy_path()
+        path = Path(candidate)
+        with self._lock:
+            mtime = self._path_mtime(str(path))
+            if mtime is None:
+                return self._reject(req, str(path), "missing_file", ["file_not_found"], started)
+
+            if (
+                self._initial_reload_done
+                and not req.force
+                and self._meta.mtime is not None
+                and mtime is not None
+                and mtime <= self._meta.mtime
+            ):
+                duration_ms = int((time.perf_counter() - started) * 1000)
+                _emit_metrics("unchanged", req.source, "unchanged", self._policy, duration_ms)
                 logger.info(
-                    "policy_reload_success",
-                    path=str(candidate),
-                    policy_id=policy.policy_id,
-                    gating_mode=policy.gating_mode,
-                    source=source,
-                    elapsed_ms=elapsed_ms,
+                    "policy_reload_unchanged",
+                    path=str(path),
+                    source=req.source,
+                    mtime=mtime,
                 )
+                self._initial_reload_done = True
                 return PolicyReloadResult(
-                    status="success",
-                    source=source,
-                    path=str(candidate),
-                    error_reason=None,
-                    reloaded_at_ms=elapsed_ms,
-                    **policy.model_dump(),
+                    status="unchanged",
+                    policy_id=self._policy.policy_id,
+                    version=self._policy.version,
+                    path=str(path),
+                    reason="unchanged",
+                    validation_errors=None,
+                    loaded_at=self._meta.loaded_at,
+                    previous_policy_id=self._policy.policy_id,
                 )
-            except Exception as exc:  # pragma: no cover - classification covered separately
+
+            try:
+                policy = self._call_loader(str(path))
+            except Exception as exc:
+                errors = []
+                if isinstance(exc, ValidationError):
+                    errors = [str(e) for e in exc.errors()]
+                elif isinstance(exc, yaml.YAMLError):
+                    errors = [str(exc)]
                 reason = _classify_error(exc)
-                elapsed_ms = int((time.perf_counter() - started) * 1000)
-                _emit_metrics("failure", source, reason, None, elapsed_ms)
-                logger.warning(
-                    "policy_reload_failed",
-                    path=str(candidate),
-                    reason=reason,
-                    error=str(exc),
-                    source=source,
-                    elapsed_ms=elapsed_ms,
-                )
-                return PolicyReloadResult(
-                    status="failure",
-                    source=source,
-                    path=str(candidate),
-                    error_reason=reason,
-                    reloaded_at_ms=elapsed_ms,
-                    **(self._policy.model_dump() if self._policy else {}),
-                )
+                return self._reject(req, str(path), reason, errors or [str(exc)], started)
+
+            self._policy = policy
+            self._path = str(path)
+            self._meta = PolicyMeta(path=str(path), mtime=mtime, content_hash=None, loaded_at=self._now(), source=req.source)
+            duration_ms = int((time.perf_counter() - started) * 1000)
+            _emit_metrics("success", req.source, "accepted", policy, duration_ms)
+            logger.info(
+                "policy_reload_success",
+                path=str(path),
+                source=req.source,
+                policy_id=policy.policy_id,
+                version=policy.version,
+                mtime=mtime,
+                duration_ms=duration_ms,
+            )
+            self._initial_reload_done = True
+            return PolicyReloadResult(
+                status="accepted",
+                policy_id=policy.policy_id,
+                version=policy.version,
+                path=str(path),
+                reason=None,
+                validation_errors=None,
+                loaded_at=self._meta.loaded_at,
+                previous_policy_id=None,
+            )
+
+    def _reject(
+        self,
+        req: PolicyReloadRequest,
+        path: str,
+        reason: str,
+        errors: list[str],
+        started: float,
+    ) -> PolicyReloadResult:
+        duration_ms = int((time.perf_counter() - started) * 1000)
+        _emit_metrics("failure", req.source, reason, None, duration_ms)
+        logger.warning(
+            "policy_reload_failed",
+            path=str(path),
+            source=req.source,
+            reason=reason,
+            errors=errors,
+            duration_ms=duration_ms,
+        )
+        return PolicyReloadResult(
+            status="rejected",
+            policy_id=getattr(self._policy, "policy_id", None),
+            version=getattr(self._policy, "version", None),
+            path=str(path),
+            reason=reason,
+            validation_errors=errors,
+            loaded_at=self._meta.loaded_at if hasattr(self, "_meta") else self._now(),
+            previous_policy_id=getattr(self._policy, "policy_id", None),
+        )
+        self._initial_reload_done = True
 
     def start_watcher(self, poll_interval_s: float = 2.0, debounce_s: float = 0.5) -> None:
         if self._path is None:
@@ -178,7 +249,7 @@ class PolicyStore:
         self._stop_event = threading.Event()
 
         def _watch() -> None:
-            last_seen = self._last_mtime
+            last_seen = self._meta.mtime
             while self._stop_event and not self._stop_event.is_set():
                 time.sleep(poll_interval_s)
                 mtime = self._path_mtime(self._path)
@@ -186,8 +257,8 @@ class PolicyStore:
                     continue
                 if time.time() - mtime < debounce_s:
                     continue
-                result = self.reload(source="watcher")
-                last_seen = mtime if result.status == "success" else mtime
+                self.reload(PolicyReloadRequest(path=self._path, source="watcher"))
+                last_seen = mtime
 
         self._watch_thread = threading.Thread(target=_watch, daemon=True)
         self._watch_thread.start()
@@ -207,3 +278,20 @@ class PolicyStore:
         if not candidate.exists():
             return None
         return candidate.stat().st_mtime
+
+    def _call_loader(self, path: str | None) -> Policy:
+        try:
+            return self._loader(path)
+        except TypeError:
+            # Support zero-arg loader used in tests
+            return self._loader()
+
+
+def get_policy_store() -> PolicyStore:
+    # simple singleton for convenience
+    global _DEFAULT_STORE
+    try:
+        return _DEFAULT_STORE
+    except NameError:
+        _DEFAULT_STORE = PolicyStore()
+        return _DEFAULT_STORE

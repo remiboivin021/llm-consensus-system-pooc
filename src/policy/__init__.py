@@ -1,5 +1,5 @@
-from src.policy.loader import PolicyStore, PolicyReloadResult, load_policy
-from src.policy.models import Policy
+from src.policy.loader import load_policy, PolicyStore, get_policy_store
+from src.policy.models import Policy, PolicyReloadRequest, PolicyReloadResult, PolicyMeta
 from src.policy.enforcer import (
     GateDecision,
     apply_gating_result,
@@ -10,7 +10,10 @@ from src.policy.enforcer import (
 __all__ = [
     "GateDecision",
     "Policy",
+    "PolicyMeta",
     "PolicyStore",
+    "get_policy_store",
+    "PolicyReloadRequest",
     "PolicyReloadResult",
     "apply_post_gating",
     "apply_gating_result",

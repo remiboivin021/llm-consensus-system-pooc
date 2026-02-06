@@ -16,7 +16,13 @@ class DummySettings:
 @pytest.mark.asyncio
 async def test_call_single_model_sanitizes_metric_labels(monkeypatch):
     async def fake_fetch_provider_result(
-        prompt, model, request_id, normalize_output, include_scores=False, provider_timeout_ms=None
+        prompt,
+        model,
+        request_id,
+        normalize_output,
+        include_scores=False,
+        provider_timeout_ms=None,
+        provider_overrides=None,
     ):
         return ProviderResult(model=model, content="ok", latency_ms=120, error=None)
 
@@ -64,10 +70,11 @@ async def test_call_single_model_sanitizes_metric_labels(monkeypatch):
         normalize_output=False,
         include_scores=False,
         provider_timeout_ms=None,
+        provider_overrides=None,
     )
 
-    assert counter.calls == [{"model": "other", "outcome": "ok"}]
+    assert counter.calls == [{"provider": "openrouter", "model": "other", "outcome": "ok"}]
     assert counter.incremented is True
-    assert histogram.calls == [{"model": "other", "outcome": "ok"}]
+    assert histogram.calls == [{"provider": "openrouter", "model": "other", "outcome": "ok"}]
     assert histogram.observed == pytest.approx(0.12)
     assert result.model == "rogue-model"

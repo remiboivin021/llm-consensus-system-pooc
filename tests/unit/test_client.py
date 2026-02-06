@@ -37,6 +37,7 @@ def test_list_strategies_contains_defaults():
     strategies = list_strategies()
     assert "majority_cosine" in strategies
     assert "score_preferred" in strategies
+    assert "ranked_choice" in strategies
 
 
 @pytest.mark.asyncio

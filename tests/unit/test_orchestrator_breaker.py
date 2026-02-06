@@ -30,7 +30,6 @@ async def test_orchestrator_short_circuits_when_open(monkeypatch):
         }
     )
     monkeypatch.setattr("src.adapters.orchestration.orchestrator.get_settings", lambda: DummySettings())
-    monkeypatch.setattr("src.adapters.orchestration.orchestrator.load_policy", lambda: policy)
 
     call_count = {"value": 0}
 
@@ -45,7 +44,10 @@ async def test_orchestrator_short_circuits_when_open(monkeypatch):
 
     monkeypatch.setattr("src.adapters.orchestration.orchestrator.fetch_provider_result", failing_fetch)
 
-    orch = Orchestrator()
+    from src.policy.loader import PolicyStore
+
+    store = PolicyStore(loader=lambda path=None: policy, policy=policy)
+    orch = Orchestrator(policy_store=store)
 
     req1 = ConsensusRequest(prompt="hi", models=["m1"])
     result1 = await orch.run(req1, "req-1")

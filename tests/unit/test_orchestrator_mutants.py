@@ -24,7 +24,15 @@ async def test_orchestrator_include_scores_false_skips_scoring(monkeypatch):
     policy = Policy.model_validate({"policy_id": "p"})
     monkeypatch.setattr("src.adapters.orchestration.orchestrator.load_policy", lambda: policy)
 
-    async def fake_fetch(prompt, model, request_id, normalize_output, include_scores, provider_timeout_ms=None):
+    async def fake_fetch(
+        prompt,
+        model,
+        request_id,
+        normalize_output,
+        include_scores,
+        provider_timeout_ms=None,
+        provider_overrides=None,
+    ):
         return ProviderResult(model=model, content="ok", latency_ms=1, error=None)
 
     monkeypatch.setattr("src.adapters.orchestration.orchestrator.fetch_provider_result", fake_fetch)
@@ -51,7 +59,15 @@ async def test_orchestrator_all_failures_returns_no_winner(monkeypatch):
     policy = Policy.model_validate({"policy_id": "p"})
     monkeypatch.setattr("src.adapters.orchestration.orchestrator.load_policy", lambda: policy)
 
-    async def fake_fetch(prompt, model, request_id, normalize_output, include_scores, provider_timeout_ms=None):
+    async def fake_fetch(
+        prompt,
+        model,
+        request_id,
+        normalize_output,
+        include_scores,
+        provider_timeout_ms=None,
+        provider_overrides=None,
+    ):
         return ProviderResult(
             model=model,
             content=None,

@@ -11,7 +11,11 @@ METHOD_NAME = "score_preferred"
 class ScorePreferredJudge(Judge):
     method = METHOD_NAME
 
-    def __init__(self, score_judge: Judge | None = None, fallback: Judge | None = None) -> None:
+    def __init__(
+        self,
+        score_judge: Judge | None = None,
+        fallback: Judge | None = None,
+    ) -> None:
         self.score_judge = score_judge or ScoreAggregationJudge()
         self.fallback = fallback or MajorityVoteJudge()
 

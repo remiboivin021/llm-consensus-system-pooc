@@ -25,7 +25,15 @@ async def test_guardrails_enforce_min_success(monkeypatch):
     monkeypatch.setattr("src.adapters.orchestration.orchestrator.get_settings", lambda: GuardrailSettings())
     monkeypatch.setattr("src.adapters.orchestration.orchestrator.load_policy", lambda: policy)
 
-    async def fake_fetch(prompt, model, request_id, normalize_output, include_scores, provider_timeout_ms=None):
+    async def fake_fetch(
+        prompt,
+        model,
+        request_id,
+        normalize_output,
+        include_scores,
+        provider_timeout_ms=None,
+        provider_overrides=None,
+    ):
         return ProviderResult(model=model, content=None, latency_ms=1, error=ErrorEnvelope(type="timeout", message="t", retryable=True))
 
     monkeypatch.setattr("src.adapters.orchestration.orchestrator.fetch_provider_result", fake_fetch)
@@ -49,7 +57,15 @@ async def test_guardrails_enforce_failure_ratio(monkeypatch):
     monkeypatch.setattr("src.adapters.orchestration.orchestrator.get_settings", lambda: GuardrailSettings())
     monkeypatch.setattr("src.adapters.orchestration.orchestrator.load_policy", lambda: policy)
 
-    async def fake_fetch(prompt, model, request_id, normalize_output, include_scores, provider_timeout_ms=None):
+    async def fake_fetch(
+        prompt,
+        model,
+        request_id,
+        normalize_output,
+        include_scores,
+        provider_timeout_ms=None,
+        provider_overrides=None,
+    ):
         if model == "m1":
             return ProviderResult(model=model, content=None, latency_ms=1, error=ErrorEnvelope(type="http_error", message="e", retryable=False))
         return ProviderResult(model=model, content="ok", latency_ms=1, error=None)
@@ -84,7 +100,15 @@ async def test_guardrails_enforce_timeout_ratio(monkeypatch):
     monkeypatch.setattr("src.adapters.orchestration.orchestrator.get_settings", lambda: GuardrailSettings())
     monkeypatch.setattr("src.adapters.orchestration.orchestrator.load_policy", lambda: policy)
 
-    async def fake_fetch(prompt, model, request_id, normalize_output, include_scores, provider_timeout_ms=None):
+    async def fake_fetch(
+        prompt,
+        model,
+        request_id,
+        normalize_output,
+        include_scores,
+        provider_timeout_ms=None,
+        provider_overrides=None,
+    ):
         if model == "m1":
             return ProviderResult(model=model, content=None, latency_ms=1, error=ErrorEnvelope(type="timeout", message="t", retryable=True))
         return ProviderResult(model=model, content="ok", latency_ms=1, error=None)
