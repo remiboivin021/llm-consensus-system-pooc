@@ -1,0 +1,46 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+.envrc
+.ropeproject
+
+# Poetry
+poetry.lock
+
+# VS Code and IDE
+.idea/
+.vscode/
+
+# Pytest cache
+.pytest_cache/
+
+# Coverage
+.coverage
+htmlcov/
+
+# Logs
+*.log
+
+# Docker
+*.pid
+*.tar
+*.gz
+*.zip
+
+# Env files
+.env
+.vscode/*
+site/
+
+# Snyk Security Extension - AI Rules (auto-generated)
+.github/instructions/snyk_rules.instructions.md
+mutant/*
+htmlcov/*
+mutants/
+pytest.xml
+result.txt
+policies/*.yaml~
