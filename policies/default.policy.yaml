@@ -1,0 +1,30 @@
+policy_id: default-v1
+description: "Baseline policy: safe defaults, minimal blocking."
+gating_mode: shadow
+normalize_allowed: false
+breaker:
+  enabled: true
+  failure_threshold: 3
+  open_ms: 15000
+  failure_decay_ms: 60000
+
+consensus:
+  judge:
+    type: score_preferred            # uses ScorePreferredJudge (score then fallback majority)
+  accept:
+    min_confidence: 0.10             # low bar, mostly informational
+    min_quality_score: 0.0
+    require_winner: false
+
+guardrails:
+  request:
+    prompt_min_chars: 1
+    prompt_max_chars: 8000
+    models:
+      min_models: 2
+      max_models: 5
+      unique_required: true
+      allowed_models: '*'
+  providers:
+    require_at_least_n_success: 1
+    max_failure_ratio: 0.75          # tolerate failures

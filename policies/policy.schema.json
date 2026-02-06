@@ -1,0 +1,150 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "LCS Policy Schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["policy_id", "consensus", "guardrails"],
+  "properties": {
+    "policy_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "version": {
+      "type": ["string", "integer"]
+    },
+    "description": {
+      "type": "string"
+    },
+    "gating_mode": {
+      "type": "string",
+      "enum": ["shadow", "soft"],
+      "default": "shadow"
+    },
+    "normalize_allowed": {
+      "type": "boolean",
+      "default": true
+    },
+    "consensus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["judge", "accept"],
+      "properties": {
+        "judge": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type"],
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": ["score_preferred", "majority_cosine", "majority_vote"]
+            }
+          }
+        },
+        "accept": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "min_confidence": {
+              "type": "number",
+              "minimum": 0.0,
+              "maximum": 1.0
+            },
+            "min_quality_score": {
+              "type": "number",
+              "minimum": 0.0,
+              "maximum": 1.0
+            },
+            "require_winner": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        }
+      }
+    },
+    "guardrails": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["request"],
+      "properties": {
+        "request": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["prompt_min_chars", "prompt_max_chars", "models"],
+          "properties": {
+            "prompt_min_chars": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "prompt_max_chars": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "models": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["min_models", "max_models"],
+              "properties": {
+                "min_models": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "max_models": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "unique_required": {
+                  "type": "boolean",
+                  "default": true
+                },
+                "allowed_models": {
+                  "oneOf": [
+                    { "type": "string", "enum": ["*"] },
+                    {
+                      "type": "array",
+                      "items": { "type": "string", "minLength": 1 }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "providers": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "require_at_least_n_success": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "max_failure_ratio": {
+              "type": "number",
+              "minimum": 0.0,
+              "maximum": 1.0
+            },
+            "max_timeout_ratio": {
+              "type": "number",
+              "minimum": 0.0,
+              "maximum": 1.0
+            }
+          }
+        }
+      }
+    },
+    "timeouts": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "provider_timeout_ms": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "e2e_timeout_ms": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    }
+  }
+}

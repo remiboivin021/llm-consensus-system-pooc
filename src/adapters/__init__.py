@@ -1,0 +1,1 @@
+"""Imperative shell - I/O adapters and side effects."""

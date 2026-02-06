@@ -1,0 +1,29 @@
+policy_id: embedded-safety-v1
+description: "Strict policy: reliability + security gates. Intended for CI/prod."
+gating_mode: soft
+normalize_allowed: true
+
+consensus:
+  judge:
+    type: majority_cosine            # deterministic, does not depend on scoring toolchain
+  accept:
+    min_confidence: 0.20
+    min_quality_score: 0.20
+    require_winner: true             # fail on tie/no winner
+
+guardrails:
+  request:
+    prompt_min_chars: 1
+    prompt_max_chars: 6000
+    models:
+      min_models: 3
+      max_models: 5
+      unique_required: true
+      allowed_models:                # prevent arbitrary model strings from users
+        - "cognitivecomputations/dolphin-mistral-24b-venice-edition:free"
+        - "liquid/lfm-2.5-1.2b-thinking:free"
+        - "tngtech/deepseek-r1t2-chimera:free"
+  providers:
+    require_at_least_n_success: 2
+    max_failure_ratio: 0.34          # with 3 models, allow max 1 failure
+    max_timeout_ratio: 0.34
