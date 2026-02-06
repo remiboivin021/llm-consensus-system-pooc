@@ -5,6 +5,7 @@ from typing import Callable, Dict
 from src.core.consensus.base import Judge
 from src.core.consensus.scoring import ScoreAggregationJudge
 from src.core.consensus.strategies import ScorePreferredJudge
+from src.core.consensus.ranked_choice import RankedChoiceJudge
 from src.core.consensus.voting import MajorityVoteJudge
 from src.errors import LcsError
 
@@ -16,6 +17,7 @@ def _build_registry() -> Dict[str, Callable[[], Judge]]:
         "majority_cosine": MajorityVoteJudge,
         "score_preferred": ScorePreferredJudge,
         "scoring": ScoreAggregationJudge,
+        "ranked_choice": RankedChoiceJudge,
     }
 
 
