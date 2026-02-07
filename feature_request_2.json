@@ -1,0 +1,181 @@
+{
+  "learned": [
+    "LCS remains a library-only consensus engine; host apps own APIs/auth/rate limiting/storage; OpenRouter-only for now.",
+    "Default policy is shadow; strict/soft preset documented for regulated use; scoring stays optional and lazy-loaded; logging remains host-owned via callbacks/helpers.",
+    "Architecture emphasizes deterministic guards (prompt/model limits, provider ratios, timeouts) and opt-in observability; no new mandatory deps." 
+  ],
+  "assumptions": [
+    "No new required dependencies; any safety/validation features ship as optional extras.",
+    "Hosts are willing to wire additional metrics/hooks when using new features.",
+    "Provider surface stays OpenRouter until explicitly expanded." 
+  ],
+  "external_landscape": {
+    "comparables": [
+      {
+        "name": "Guardrails AI",
+        "summary": "Schema + validator + re-ask loop for structured outputs; shows validation patterns and latency trade-offs.",
+        "source": "https://pypi.org/project/guardrails-ai/0.4.0/"
+      },
+      {
+        "name": "llm-prompt-shield",
+        "summary": "Rule/semantic prompt-injection detector with allow/block modes; relevant for preflight safety gates.",
+        "source": "https://pypi.org/project/llm-prompt-shield/"
+      },
+      {
+        "name": "LLM Privacy Filter",
+        "summary": "Open-source PII redaction toolkit usable as a preprocessing step.",
+        "source": "https://pypi.org/project/llm-privacy-filter/"
+      }
+    ],
+    "research": [
+      {
+        "title": "Pydantic LLM validation patterns",
+        "takeaway": "Demonstrates structured output validation + graceful fallback for LLM responses.",
+        "source": "https://pydantic.dev/articles/llm-intro"
+      },
+      {
+        "title": "Guardrails JSON schema resilience discussions",
+        "takeaway": "Highlights need for graceful handling when outputs miss schema; informs re-ask cap.",
+        "source": "https://github.com/guardrails-ai/guardrails/issues/594"
+      }
+    ]
+  },
+  "feature_backlog": [
+    {
+      "title": "Add optional prompt-safety prefilter",
+      "motivation": "Block or warn on prompt injection before provider call.",
+      "user_story": "When a prompt is unsafe, I want it blocked or annotated pre-dispatch.",
+      "scope": "Pluggable rule-based detector; policy flag for block/warn/off; default off.",
+      "contracts": "Runs before timeouts; never sends blocked prompt; deterministic decision.",
+      "risks_mitigations": "False positives mitigated via warn mode and allowlist.",
+      "observability": "Metrics for blocked/warned counts; reason code logging.",
+      "test_strategy": "Malicious prompt fixtures; policy mode coverage.",
+      "effort": "M",
+      "dependencies": "Optional extra"
+    },
+    {
+      "title": "Optional PII redaction prefilter",
+      "motivation": "Prevent leaking sensitive data to provider.",
+      "user_story": "When prompt contains PII, mask it before dispatch.",
+      "scope": "Optional module; deterministic masking; records redaction map for audit.",
+      "contracts": "Masking never expands text; can be disabled; respects policy flag.",
+      "risks_mitigations": "Over-redaction mitigated with confidence threshold and preview mode.",
+      "observability": "Redaction count metric; metadata flag.",
+      "test_strategy": "PII fixtures; idempotence checks.",
+      "effort": "M",
+      "dependencies": "Optional extra"
+    },
+    {
+      "title": "Output schema validation + one-shot re-ask",
+      "motivation": "Improve structured reliability without changing core contract.",
+      "user_story": "When structured output is requested, validate and retry once on schema violation.",
+      "scope": "Optional validator hook using Pydantic schema; max_reask=1; default off.",
+      "contracts": "If validation fails, return gated result with reason; no infinite loops.",
+      "risks_mitigations": "Latency increase mitigated by single re-ask and timeout budget.",
+      "observability": "validation_fail counter; reask count.",
+      "test_strategy": "Schema mismatch cases; timeout path; success path.",
+      "effort": "M",
+      "dependencies": "Optional guardrails/pydantic extra"
+    },
+    {
+      "title": "Policy lint & CI check CLI",
+      "motivation": "Catch invalid/unsafe policies before deploy.",
+      "user_story": "Run `poetry run lcs policy lint policies/*.yaml` to fail on bad configs.",
+      "scope": "CLI validates schema, ratios, allowed_models syntax; zero network.",
+      "contracts": "Deterministic exit codes; uses shared policy schema version.",
+      "risks_mitigations": "Schema drift mitigated via version tagging in policy files.",
+      "observability": "n/a",
+      "test_strategy": "Golden pass/fail fixtures.",
+      "effort": "S",
+      "dependencies": "None"
+    },
+    {
+      "title": "Gate-reason telemetry & drift alerts",
+      "motivation": "Spot shifts in gating reasons (e.g., prompt_too_long spikes).",
+      "user_story": "When gate reasons spike, I want metrics to alert and a summary export.",
+      "scope": "Reason-labeled counter with capped cardinality; optional moving-average helper.",
+      "contracts": "Enumerated reasons only; low cardinality.",
+      "risks_mitigations": "Cardinality capped; documented reason set.",
+      "observability": "New Prometheus counter by reason.",
+      "test_strategy": "Metric emission tests in shadow/soft modes.",
+      "effort": "S",
+      "dependencies": "None"
+    },
+    {
+      "title": "Deterministic seed & replay tokens",
+      "motivation": "Aid debugging and CI reproducibility.",
+      "user_story": "Get a replay token (seed, model order, strategy) to re-run deterministically with recorded stubs.",
+      "scope": "Include seed in result metadata; helper to rerun with same seed using mocks.",
+      "contracts": "No change unless seed provided; deterministic ordering.",
+      "risks_mitigations": "Docs clarify provider nondeterminism limits.",
+      "observability": "n/a",
+      "test_strategy": "Replay round-trips with stubs.",
+      "effort": "S/M",
+      "dependencies": "None"
+    },
+    {
+      "title": "Prompt auto-truncation with provenance note",
+      "motivation": "Avoid hard failures on overlength prompts while staying transparent.",
+      "user_story": "If prompt is too long, truncate deterministically and note it in result.",
+      "scope": "Policy flag to enable; middle-ellipsis truncation; records bytes removed.",
+      "contracts": "Never exceed max; gating can still hard-block if configured.",
+      "risks_mitigations": "Info loss mitigated via opt-in and provenance metadata.",
+      "observability": "Truncation count metric.",
+      "test_strategy": "Boundary length tests; unicode safety.",
+      "effort": "S",
+      "dependencies": "None"
+    },
+    {
+      "title": "Strategy advisor hinting",
+      "motivation": "Help hosts choose a strategy without trial-and-error.",
+      "user_story": "Given prompt length/model count/include_scores, get a suggested strategy label.",
+      "scope": "Pure heuristic function; no auto-switching.",
+      "contracts": "Deterministic rules; documented.",
+      "risks_mitigations": "Labeled as hint-only to avoid overreliance.",
+      "observability": "n/a",
+      "test_strategy": "Table-driven heuristics tests.",
+      "effort": "S",
+      "dependencies": "None"
+    },
+    {
+      "title": "Timeout tuner helper (offline)",
+      "motivation": "Suggest sane provider/e2e timeouts from observed latency percentiles.",
+      "user_story": "Ingest metrics CSV/JSON and output policy snippet with suggested timeouts.",
+      "scope": "Offline util; deterministic suggestions; guard min/max.",
+      "contracts": "Read-only; no network.",
+      "risks_mitigations": "Warn on insufficient samples; clamp outputs.",
+      "observability": "n/a",
+      "test_strategy": "Fixture-driven suggestion tests.",
+      "effort": "M",
+      "dependencies": "None"
+    },
+    {
+      "title": "Concurrency budget calculator",
+      "motivation": "Prevent oversubscription given latency and resource budgets.",
+      "user_story": "Given avg latency, target p95, CPU budget, get suggested MAX_MODELS/semaphore size.",
+      "scope": "Pure function + CLI; no autoscaling.",
+      "contracts": "Deterministic formula; documented assumptions.",
+      "risks_mitigations": "Warnings for unrealistic inputs.",
+      "observability": "n/a",
+      "test_strategy": "Unit math checks.",
+      "effort": "S",
+      "dependencies": "None"
+    }
+  ],
+  "roadmap": {
+    "horizon_1": [
+      "Policy lint & CI check CLI",
+      "Gate-reason telemetry & drift alerts",
+      "Prompt auto-truncation with provenance note",
+      "Deterministic seed & replay tokens",
+      "Optional prompt-safety prefilter (extra)"
+    ],
+    "horizon_2": [
+      "Optional PII redaction prefilter",
+      "Output schema validation + one-shot re-ask",
+      "Strategy advisor hinting",
+      "Timeout tuner helper (offline)",
+      "Concurrency budget calculator"
+    ]
+  }
+}
