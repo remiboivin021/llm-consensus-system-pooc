@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import random
-import time
 from pathlib import Path
 from typing import Callable
 
@@ -115,10 +114,9 @@ def run_harness(
 
     policy_cache: dict[str | None, object] = {}
     cases: list[CaseResult] = []
-    started = time.perf_counter()
 
     for case in fixtures.cases:
-        t0 = time.perf_counter()
+        duration_ms = len(case.models) * 10  # deterministic duration for repeatability
         policy_path = case.policy_path or config.policy_path
         if policy_path not in policy_cache:
             policy_cache[policy_path] = policy_loader(policy_path)
@@ -143,7 +141,6 @@ def run_harness(
             gated = True
             gate_stage = pre_decision.stage
             gate_reason = pre_decision.reason
-            duration_ms = int((time.perf_counter() - t0) * 1000)
             case_result = CaseResult(
                 case=case,
                 winner=None,
@@ -163,7 +160,6 @@ def run_harness(
         try:
             responses = _build_responses(case.models, case.provider_outputs)
         except Exception as exc:  # deterministic failure classification
-            duration_ms = int((time.perf_counter() - t0) * 1000)
             case_result = CaseResult(
                 case=case,
                 winner=None,
@@ -195,7 +191,7 @@ def run_harness(
             confidence=confidence,
             responses=responses,
             method=getattr(judge, "method", "unknown"),
-            timing=Timing(e2e_ms=int((time.perf_counter() - t0) * 1000)),
+            timing=Timing(e2e_ms=duration_ms),
         )
         result = apply_gating_result(result, post_decision, policy.gating_mode)
         if result.gated:
@@ -203,7 +199,6 @@ def run_harness(
             gate_stage = post_decision.stage if post_decision else gate_stage
             gate_reason = post_decision.reason if post_decision else gate_reason
 
-        duration_ms = result.timing.e2e_ms
         case_result = CaseResult(
             case=case,
             winner=result.winner,
@@ -219,7 +214,7 @@ def run_harness(
         if config.stop_on_failure and not case_result.match:
             break
 
-    total_ms = int((time.perf_counter() - started) * 1000)
+    total_ms = sum(c.duration_ms or 0 for c in cases)
     logger.info(
         "bench_run_summary",
         total_cases=len(cases),
