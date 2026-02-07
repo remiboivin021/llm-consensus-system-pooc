@@ -86,8 +86,13 @@ class PiiPrefilter(BaseModel):
     map_limit: int = Field(default=500, ge=0)
 
 
+class PromptTruncateConfig(BaseModel):
+    enabled: bool = False
+
+
 class PrefilterConfig(BaseModel):
     pii: PiiPrefilter = Field(default_factory=PiiPrefilter)
+    prompt_truncate: PromptTruncateConfig = Field(default_factory=PromptTruncateConfig)
     prompt_safety: PromptSafetyConfig = Field(default_factory=PromptSafetyConfig)
 
 
