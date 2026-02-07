@@ -10,6 +10,33 @@ from src.policy.models import Policy
 
 logger = get_logger()
 
+
+# Low-cardinality gate reasons for telemetry
+_ALLOWED_REASONS = {
+    "normalize_not_allowed",
+    "prompt_too_short",
+    "prompt_too_long",
+    "too_few_models",
+    "too_many_models",
+    "duplicate_models",
+    "model_not_allowed",
+    "winner_required",
+    "confidence_too_low",
+    "quality_too_low",
+}
+
+
+def sanitize_gate_reason(reason: str | None) -> str:
+    """
+    Clamp gating reasons to a small, known set for metrics.
+    Collapses dynamic reasons (e.g., model_not_allowed:foo) to model_not_allowed.
+    """
+    if not reason:
+        return "unknown"
+    if reason.startswith("model_not_allowed"):
+        return "model_not_allowed"
+    return reason if reason in _ALLOWED_REASONS else "unknown"
+
 @dataclass
 class GateDecision:
     gated: bool

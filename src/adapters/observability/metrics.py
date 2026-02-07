@@ -27,8 +27,11 @@ __all__ = [
     "policy_active_info",
     "provider_resolution_failures_total",
     "preamble_usage_total",
+    "pii_redaction_runs_total",
+    "pii_redactions_total",
     "output_validation_total",
     "output_validation_reasks_total",
+    "gate_decisions_total",
 ]
 
 http_request_duration_seconds = Histogram(
@@ -160,6 +163,12 @@ provider_resolution_failures_total = Counter(
     "provider_resolution_failures_total",
     "Total provider resolution failures (unknown provider, unsupported model, etc.)",
     ["reason"],
+)
+
+gate_decisions_total = Counter(
+    "gate_decisions_total",
+    "Total gating decisions by stage and reason",
+    ["stage", "reason"],
 )
 
 output_validation_total = Counter(
