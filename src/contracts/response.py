@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from src.contracts.errors import ErrorEnvelope
 from src.contracts.early_stop import EarlyStopReport
-from src.contracts.safety import PromptSafetyDecision
+from src.contracts.safety import PromptSafetyDecision, PromptTruncationInfo
 
 
 class ModelResponse(BaseModel):
@@ -98,3 +98,4 @@ class ConsensusResult(BaseModel):
     early_stop: EarlyStopReport | None = None
     redaction: RedactionSummary | None = None
     prompt_safety: PromptSafetyDecision | None = None
+    prompt_truncation: PromptTruncationInfo | None = None
