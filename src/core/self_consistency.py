@@ -69,6 +69,7 @@ async def run_self_consistency(
 
         samples.append(result.to_contract())
 
+        successes = [r for r in samples if r.error is None and r.content is not None]
         with tracer.start_as_current_span(
             "self_consistency.sample",
             attributes={
@@ -79,9 +80,14 @@ async def run_self_consistency(
                 "error": getattr(result.error, "type", None),
             },
         ):
-            winner, confidence = _aggregate_confidence(samples, model)
+            winner, confidence = _aggregate_confidence(successes, model)
 
-        if idx >= config.min_samples and winner and confidence >= config.threshold:
+        if (
+            idx >= config.min_samples
+            and len(successes) >= 2
+            and winner
+            and confidence >= config.threshold
+        ):
             stop_reason = "threshold"
             break
 
