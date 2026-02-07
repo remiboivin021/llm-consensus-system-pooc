@@ -33,6 +33,7 @@ from src.adapters.observability.metrics import (
     output_validation_reasks_total,
     pii_redaction_runs_total,
     pii_redactions_total,
+    gate_decisions_total,
 )
 from src.adapters.orchestration.models import (
     ProviderResult,
@@ -43,7 +44,9 @@ from src.adapters.orchestration.models import (
 from src.adapters.orchestration.timeouts import enforce_timeout
 from src.core.consensus.base import Judge
 from src.core.consensus.strategies import ScorePreferredJudge
+from src.contracts.safety import PromptSafetyDecision
 from src.core.safety.detector import run_prompt_safety
+from src.core.safety.truncation import truncate_middle
 from src.core.consensus.calibration import IdentityCalibrator
 from src.core.validation import resolve_validator
 from src.core.consensus.utils import apply_calibrator
@@ -55,12 +58,13 @@ from src.errors import LcsError
 from src.adapters.orchestration.breaker import BreakerManager, BreakerState
 from src.adapters.prefilter.pii import redact_prompt
 from src.policy import (
+    GateDecision,
     apply_post_gating,
     apply_gating_result,
     apply_preflight_gating,
-    load_policy,
 )
-from src.policy.loader import PolicyStore, get_policy_store
+from src.policy.enforcer import sanitize_gate_reason
+from src.policy.loader import PolicyStore, get_policy_store, load_policy
 from src.policy.models import ProviderGuard, BreakerConfig
 
 logger = get_logger()
@@ -181,8 +185,9 @@ class Orchestrator:
         model: str,
         request_id: str,
         normalize_output: bool,
-        include_scores: bool,
-        provider_timeout_ms: int | None,
+        system_preamble: str | None = None,
+        include_scores: bool = False,
+        provider_timeout_ms: int | None = None,
         provider_overrides: dict[str, str] | None = None,
     ) -> ProviderResult:
         allowed, breaker_state = await self.breakers.should_allow(model)
@@ -208,15 +213,30 @@ class Orchestrator:
             )
             _record_breaker_state(model, breaker_state)
         else:
-            result = await fetch_provider_result(
-                prompt,
-                model,
-                request_id,
-                normalize_output,
-                include_scores,
-                provider_timeout_ms,
-                provider_overrides,
-            )
+            try:
+                result = await fetch_provider_result(
+                    prompt=prompt,
+                    model=model,
+                    request_id=request_id,
+                    normalize_output=normalize_output,
+                    include_scores=include_scores,
+                    provider_timeout_ms=provider_timeout_ms,
+                    provider_overrides=provider_overrides,
+                    system_preamble=system_preamble,
+                )
+            except TypeError as exc:
+                # Backward compatibility: allow test doubles that lack the system_preamble kwarg.
+                try:
+                    result = await fetch_provider_result(
+                        prompt,
+                        model,
+                        request_id,
+                        normalize_output,
+                        include_scores,
+                        provider_timeout_ms,
+                    )
+                except TypeError:
+                    raise exc
             if result.error is None:
                 breaker_state = await self.breakers.record_success(model)
             else:
@@ -282,6 +302,7 @@ class Orchestrator:
         calibration_applied = None
         calibration_reason = None
         safety_decision: PromptSafetyDecision | None = None
+        trunc_info = None
         safety_decision: PromptSafetyDecision | None = None
         cost_summary = None
         latency_summary = None
@@ -315,6 +336,11 @@ class Orchestrator:
                     entries=entries,
                 )
 
+            system_preamble, preamble_version = self._select_preamble(
+                consensus_request.normalize_output, getattr(consensus_request, "preamble_key", None), policy
+            )
+            preamble_blocked = system_preamble == "preamble_not_allowed"
+
             preflight_decision = apply_preflight_gating(
                 policy,
                 prompt_for_processing,
@@ -322,6 +348,20 @@ class Orchestrator:
                 consensus_request.normalize_output,
                 request_id=request_id,
             )
+            if preamble_blocked:
+                preflight_decision = preflight_decision or GateDecision(True, "preamble_not_allowed", stage="pre")
+            if preflight_decision:
+                reason_label = sanitize_gate_reason(preflight_decision.reason)
+                try:
+                    gate_decisions_total.labels(stage="pre", reason=reason_label).inc()
+                except Exception:
+                    logger.warning(
+                        "metrics_emit_failed",
+                        metric="gate_decisions_total",
+                        stage="pre",
+                        reason=reason_label,
+                        request_id=request_id,
+                    )
             if preflight_decision and policy.gating_mode == "soft":
                 e2e_ms = int((time.perf_counter() - start_time) * 1000)
                 logger.info(
@@ -368,10 +408,21 @@ class Orchestrator:
                 self.settings.max_prompt_chars, policy.guardrails.request.prompt_max_chars
             )
             if len(prompt_for_processing) > effective_prompt_max:
-                envelope = ErrorEnvelope(
-                    type="config_error", message="Prompt too long", retryable=False, status_code=400
-                )
-                raise OrchestrationError(envelope)
+                truncate_cfg = getattr(policy.prefilter, "prompt_truncate", None)
+                if truncate_cfg and truncate_cfg.enabled:
+                    prompt_for_processing, trunc_info = truncate_middle(
+                        prompt_for_processing, effective_prompt_max
+                    )
+                    safety_decision = safety_decision or PromptSafetyDecision(
+                        action="warn", reason="prompt_truncated", details=None
+                    )
+                else:
+                    envelope = ErrorEnvelope(
+                        type="config_error", message="Prompt too long", retryable=False, status_code=400
+                    )
+                    raise OrchestrationError(envelope)
+            if trunc_info and getattr(trunc_info, "applied", False):
+                consensus_request.prompt = prompt_for_processing
 
             effective_e2e_timeout = self.settings.e2e_timeout_ms
             if policy.timeouts and policy.timeouts.e2e_timeout_ms:
@@ -411,6 +462,7 @@ class Orchestrator:
                         model_name,
                         request_id,
                         consensus_request.normalize_output,
+                        system_preamble,
                         consensus_request.include_scores,
                         effective_provider_timeout,
                         consensus_request.provider_overrides,
@@ -612,15 +664,30 @@ class Orchestrator:
                                 reask_timeout = effective_provider_timeout
                                 if reask_timeout is not None:
                                     reask_timeout = min(reask_timeout, remaining_ms)
-                                reask_result = await fetch_provider_result(
-                                    prompt=consensus_request.prompt,
-                                    model=winner,
-                                    request_id=request_id,
-                                    normalize_output=consensus_request.normalize_output,
-                                    include_scores=consensus_request.include_scores,
-                                    provider_timeout_ms=reask_timeout,
-                                    provider_overrides=consensus_request.provider_overrides,
-                                )
+                                try:
+                                    reask_result = await fetch_provider_result(
+                                        prompt=prompt_for_processing,
+                                        model=winner,
+                                        request_id=request_id,
+                                        normalize_output=consensus_request.normalize_output,
+                                        system_preamble=system_preamble,
+                                        include_scores=consensus_request.include_scores,
+                                        provider_timeout_ms=reask_timeout,
+                                        provider_overrides=consensus_request.provider_overrides,
+                                    )
+                                except TypeError as exc:
+                                    # Backward compatibility for patched fetch_provider_result without system_preamble.
+                                    try:
+                                        reask_result = await fetch_provider_result(
+                                            prompt_for_processing,
+                                            winner,
+                                            request_id,
+                                            consensus_request.normalize_output,
+                                            consensus_request.include_scores,
+                                            reask_timeout,
+                                        )
+                                    except TypeError:
+                                        raise exc
                                 responses[target_idx] = reask_result.to_contract()
                                 latency_summary = _compute_latency_summary(responses)
                                 valid, reason = _validate(responses[target_idx])
@@ -674,6 +741,7 @@ class Orchestrator:
                                 cost_summary=cost_summary,
                                 latency_summary=latency_summary or _compute_latency_summary(responses),
                                 redaction=redaction_summary,
+                                prompt_safety=safety_decision,
                             )
                             await self._fire_run_event(
                                 consensus_request,
@@ -688,10 +756,23 @@ class Orchestrator:
                                 error_type="validation_failed",
                                 include_scores=consensus_request.include_scores,
                                 score_stats=score_stats.dict() if score_stats else None,
+                                prompt_text=prompt_for_processing,
                             )
                             return result
 
             post_decision = apply_post_gating(policy, judgement, score_stats)
+            if post_decision:
+                reason_label = sanitize_gate_reason(post_decision.reason)
+                try:
+                    gate_decisions_total.labels(stage="post", reason=reason_label).inc()
+                except Exception:
+                    logger.warning(
+                        "metrics_emit_failed",
+                        metric="gate_decisions_total",
+                        stage="post",
+                        reason=reason_label,
+                        request_id=request_id,
+                    )
             if post_decision and policy.gating_mode == "shadow":
                 logger.info(
                     "policy_post_shadow",
@@ -717,6 +798,7 @@ class Orchestrator:
                 cost_summary=cost_summary,
                 latency_summary=latency_summary,
                 redaction=redaction_summary,
+                prompt_truncation=trunc_info,
             )
             if post_decision and policy.gating_mode == "soft":
                 logger.info(
@@ -740,6 +822,7 @@ class Orchestrator:
                 error_type=getattr(exc.envelope, "type", None),
                 include_scores=consensus_request.include_scores,
                 score_stats=score_stats.dict() if score_stats else None,
+                prompt_text=prompt_for_processing,
             )
             raise
         except Exception:
@@ -757,6 +840,7 @@ class Orchestrator:
                 error_type="internal",
                 include_scores=consensus_request.include_scores,
                 score_stats=score_stats.dict() if score_stats else None,
+                prompt_text=prompt_for_processing,
             )
             raise
         else:
@@ -773,6 +857,7 @@ class Orchestrator:
                 error_type=None,
                 include_scores=consensus_request.include_scores,
                 score_stats=score_stats.dict() if score_stats else None,
+                prompt_text=prompt_for_processing,
             )
             return result
 
@@ -784,6 +869,40 @@ class Orchestrator:
         start_time: float,
     ) -> ConsensusResult:
         policy = self.policy_store.current()
+        prompt_for_processing = consensus_request.prompt
+        redaction_summary: RedactionSummary | None = None
+        if policy.prefilter.pii.enabled:
+            redaction_result = redact_prompt(prompt_for_processing, policy.prefilter.pii)
+            prompt_for_processing = redaction_result.masked_prompt
+            counts = redaction_result.counts
+            try:
+                pii_redaction_runs_total.labels(applied=str(redaction_result.applied).lower()).inc()
+                for rtype, count in counts.items():
+                    pii_redactions_total.labels(type=rtype).inc(count)
+            except Exception:
+                logger.warning("metrics_emit_failed", metric="pii_redaction_runs_total")
+            entries = (
+                [
+                    RedactionEntry(type=e.type, mask=e.mask, start=e.start, end=e.end)
+                    for e in redaction_result.entries
+                ]
+                if redaction_result.entries
+                else None
+            )
+            redaction_summary = RedactionSummary(
+                applied=redaction_result.applied,
+                total=sum(counts.values()),
+                types=counts,
+                truncated=redaction_result.truncated,
+                entries=entries,
+            )
+        system_preamble, preamble_version = self._select_preamble(
+            consensus_request.normalize_output, getattr(consensus_request, "preamble_key", None), policy
+        )
+        preamble_blocked = system_preamble == "preamble_not_allowed"
+        token = build_replay_token(consensus_request.seed, consensus_request.models, strategy_label, policy)
+        if consensus_request.seed is not None:
+            random.seed(consensus_request.seed)
         config = consensus_request.early_stop
         assert config is not None and config.enabled  # validated upstream
 
@@ -794,15 +913,30 @@ class Orchestrator:
         confidence = None
         result: ConsensusResult | None = None
         stop_reason = "max_samples"
+        trunc_info = None
 
         try:
             preflight_decision = apply_preflight_gating(
                 policy,
-                consensus_request.prompt,
+                prompt_for_processing,
                 consensus_request.models,
                 consensus_request.normalize_output,
                 request_id=request_id,
             )
+            if preamble_blocked:
+                preflight_decision = preflight_decision or GateDecision(True, "preamble_not_allowed", stage="pre")
+            if preflight_decision:
+                reason_label = sanitize_gate_reason(preflight_decision.reason)
+                try:
+                    gate_decisions_total.labels(stage="pre", reason=reason_label).inc()
+                except Exception:
+                    logger.warning(
+                        "metrics_emit_failed",
+                        metric="gate_decisions_total",
+                        stage="pre",
+                        reason=reason_label,
+                        request_id=request_id,
+                    )
             safety_decision = self._prompt_safety_check(consensus_request, policy, request_id)
             if safety_decision and safety_decision.action == "block":
                 e2e_ms = int((time.perf_counter() - start_time) * 1000)
@@ -821,10 +955,13 @@ class Orchestrator:
                     calibration_reason=None,
                     responses=[],
                     method="prompt_safety_block",
+                    seed=consensus_request.seed,
+                    replay_token=token,
                     timing=Timing(e2e_ms=e2e_ms),
                     gated=True,
                     gate_reason=safety_decision.reason,
                     prompt_safety=safety_decision,
+                    prompt_truncation=trunc_info,
                 )
                 await self._fire_run_event(
                     consensus_request,
@@ -839,6 +976,7 @@ class Orchestrator:
                     error_type=None,
                     include_scores=consensus_request.include_scores,
                     score_stats=None,
+                    prompt_text=prompt_for_processing,
                 )
                 return result
             if preflight_decision and policy.gating_mode == "soft":
@@ -873,6 +1011,7 @@ class Orchestrator:
                     error_type=None,
                     include_scores=consensus_request.include_scores,
                     score_stats=None,
+                    prompt_text=prompt_for_processing,
                 )
                 return result
 
@@ -886,11 +1025,25 @@ class Orchestrator:
             effective_prompt_max = min(
                 self.settings.max_prompt_chars, policy.guardrails.request.prompt_max_chars
             )
-            if len(consensus_request.prompt) > effective_prompt_max:
-                envelope = ErrorEnvelope(
-                    type="config_error", message="Prompt too long", retryable=False, status_code=400
-                )
-                raise OrchestrationError(envelope)
+            if len(prompt_for_processing) > effective_prompt_max:
+                truncate_cfg = getattr(policy.prefilter, "prompt_truncate", None)
+                if truncate_cfg and truncate_cfg.enabled:
+                    prompt_for_processing, trunc_info = truncate_middle(
+                        prompt_for_processing, effective_prompt_max
+                    )
+                    safety_decision = safety_decision or PromptSafetyDecision(
+                        action="warn", reason="prompt_truncated", details=None
+                    )
+                else:
+                    envelope = ErrorEnvelope(
+                        type="config_error", message="Prompt too long", retryable=False, status_code=400
+                    )
+                    raise OrchestrationError(envelope)
+            if trunc_info and getattr(trunc_info, "applied", False):
+                consensus_request.prompt = prompt_for_processing
+            if trunc_info and getattr(trunc_info, "applied", False):
+                # Keep the request in sync with the processed prompt for downstream consumers/tests.
+                consensus_request.prompt = prompt_for_processing
 
             effective_e2e_timeout = self.settings.e2e_timeout_ms
             if policy.timeouts and policy.timeouts.e2e_timeout_ms:
@@ -902,6 +1055,7 @@ class Orchestrator:
 
             max_samples = config.max_samples or len(consensus_request.models)
             selected_models = consensus_request.models[:max_samples]
+            token = build_replay_token(consensus_request.seed, selected_models, strategy_label, policy)
 
             from src.adapters.providers import registry
             from src.adapters.providers.openrouter import register_default_openrouter
@@ -933,10 +1087,11 @@ class Orchestrator:
 
                 provider_result = await enforce_timeout(
                     self._call_single_model(
-                        consensus_request.prompt,
+                        prompt_for_processing,
                         model_name,
                         request_id,
                         consensus_request.normalize_output,
+                        system_preamble,
                         consensus_request.include_scores,
                         effective_provider_timeout,
                         consensus_request.provider_overrides,
@@ -1020,6 +1175,18 @@ class Orchestrator:
             consensus_duration_seconds.labels(strategy=strategy_label).observe(e2e_ms / 1000)
 
             post_decision = apply_post_gating(policy, judgement, score_stats)
+            if post_decision:
+                reason_label = sanitize_gate_reason(post_decision.reason)
+                try:
+                    gate_decisions_total.labels(stage="post", reason=reason_label).inc()
+                except Exception:
+                    logger.warning(
+                        "metrics_emit_failed",
+                        metric="gate_decisions_total",
+                        stage="post",
+                        reason=reason_label,
+                        request_id=request_id,
+                    )
             if post_decision and policy.gating_mode == "shadow":
                 logger.info(
                     "policy_post_shadow",
@@ -1033,6 +1200,8 @@ class Orchestrator:
                 confidence=confidence,
                 responses=[] if not consensus_request.include_raw else responses,
                 method=method,
+                seed=consensus_request.seed,
+                replay_token=token,
                 timing=Timing(e2e_ms=e2e_ms),
                 scores=scores,
                 score_stats=score_stats,
@@ -1042,6 +1211,8 @@ class Orchestrator:
                     current_confidence=confidence or 0.0,
                     winner=winner,
                 ),
+                prompt_truncation=trunc_info,
+                redaction=redaction_summary,
             )
             if post_decision and policy.gating_mode == "soft":
                 logger.info(
@@ -1065,6 +1236,7 @@ class Orchestrator:
                 error_type=getattr(exc.envelope, "type", None),
                 include_scores=consensus_request.include_scores,
                 score_stats=score_stats.dict() if score_stats else None,
+                prompt_text=prompt_for_processing,
             )
             raise
         except Exception:
@@ -1082,6 +1254,7 @@ class Orchestrator:
                 error_type="internal",
                 include_scores=consensus_request.include_scores,
                 score_stats=score_stats.dict() if score_stats else None,
+                prompt_text=prompt_for_processing,
             )
             raise
         else:
@@ -1104,6 +1277,7 @@ class Orchestrator:
                 error_type=None,
                 include_scores=consensus_request.include_scores,
                 score_stats=score_stats.dict() if score_stats else None,
+                prompt_text=prompt_for_processing,
             )
             return result
 
