@@ -3,6 +3,7 @@
 from src.client import LcsClient, consensus, list_strategies
 from src.contracts.request import ConsensusRequest
 from src.contracts.response import ConsensusResult
+from src.core.concurrency import calculate_concurrency_budget, ConcurrencyBudgetInput, ConcurrencyBudgetResult
 from src.errors import LcsError
 
 __all__ = [
@@ -12,4 +13,7 @@ __all__ = [
     "ConsensusRequest",
     "ConsensusResult",
     "LcsError",
+    "calculate_concurrency_budget",
+    "ConcurrencyBudgetInput",
+    "ConcurrencyBudgetResult",
 ]
